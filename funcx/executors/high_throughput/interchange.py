@@ -545,7 +545,9 @@ class Interchange(object):
                                 manager))
 
                 else:
-                    tasks_requested = int.from_bytes(message[1], "little")
+                    # TODO: TYLER Change this to advertise total number of each task type requested
+                    # tasks_requested = int.from_bytes(message[1], "little")
+                    tasks_requested = pickle.loads(message[1])
                     logger.debug("[MAIN] Manager {} requested {} tasks".format(manager, tasks_requested))
                     self._ready_manager_queue[manager]['last'] = time.time()
                     if tasks_requested == HEARTBEAT_CODE:

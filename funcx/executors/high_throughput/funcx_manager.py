@@ -194,7 +194,8 @@ class Manager(object):
     def heartbeat(self):
         """ Send heartbeat to the incoming task queue
         """
-        heartbeat = (HEARTBEAT_CODE).to_bytes(4, "little")
+        # heartbeat = (HEARTBEAT_CODE).to_bytes(4, "little")
+        heartbeat = pickle.dumps(HEARTBEAT_CODE)
         r = self.task_incoming.send(heartbeat)
         logger.debug("Return from heartbeat: {}".format(r))
 
@@ -248,7 +249,8 @@ class Manager(object):
 
             if pending_task_count < self.max_queue_size and ready_worker_count > 0:
                 logger.debug("[TASK_PULL_THREAD] Requesting tasks: {}".format(ready_worker_count))
-                msg = (ready_worker_count.to_bytes(4, "little"))
+                # msg = (ready_worker_count.to_bytes(4, "little"))
+                msg = pickle.dumps(self.worker_map.ready_worker_type_counts)
                 self.task_incoming.send(msg)
 
             # Receive results from the workers, if any
