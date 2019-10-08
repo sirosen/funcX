@@ -67,6 +67,7 @@ class Config(RepresentationMixin):
         # Connection info
         self.worker_ports = worker_ports
         self.worker_port_range = worker_port_range
+        self.container_image = container_image
 
         # Scaling info
         self.strategy = strategy
