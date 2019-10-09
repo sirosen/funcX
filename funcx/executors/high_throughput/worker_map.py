@@ -89,7 +89,6 @@ class WorkerMap(object):
             logger.debug("[SPIN UP] Spinning up new workers!")
             num_slots = min(self.worker_count - self.active_workers - self.pending_workers, len(next_worker_q))
             for _ in range(num_slots):
-
                 try:
                     self.add_worker(worker_id=str(self.worker_counter),
                                     worker_type=next_worker_q.pop(0),
@@ -166,7 +165,9 @@ class WorkerMap(object):
 
         if mode == 'no_container':
             modded_cmd = cmd
-        elif mode == 'singularity':
+
+        # TODO: Add back 'no_reuse' mode that also designates the container for immediate killing.
+        elif 'singularity' in mode and container_uri is not None:
             modded_cmd = f'singularity run --writable {container_uri} {cmd}'
         else:
             raise NameError("Invalid container launch mode.")
@@ -197,7 +198,6 @@ class WorkerMap(object):
         Queue containing the next workers the system should spin-up.
         """
 
-        # next_worker_q = []
         new_worker_list = []
         for worker_type in new_worker_map:
             # If we don't already have this type of worker in our worker_map...

@@ -131,7 +131,6 @@ class Manager(object):
         self.uid = uid
 
         self.mode = mode
-        self.container_image = container_image
         self.cores_on_node = multiprocessing.cpu_count()
         self.max_workers = max_workers
         self.cores_per_workers = cores_per_worker
@@ -308,7 +307,6 @@ class Manager(object):
                         task_type = task['task_id'].split(';')[1]
 
                         logger.debug("[TASK DEBUG] Task is of type: {}".format(task_type))
-
                         if task_type not in self.task_queues:
                             self.task_queues[task_type] = queue.Queue()
                             self.worker_map.total_worker_type_counts[task_type] = 0
@@ -498,6 +496,7 @@ def cli_run():
         logger = set_file_logger('{}/{}/manager.log'.format(args.logdir, args.uid),
                                  level=logging.DEBUG if args.debug is True else logging.INFO)
 
+        # TODO: Get rid of 'container image' since these are task (not manager) dependent
         logger.info("Python version: {}".format(sys.version))
         logger.info("Debug logging: {}".format(args.debug))
         logger.info("Log dir: {}".format(args.logdir))
