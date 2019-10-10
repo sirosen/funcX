@@ -167,9 +167,10 @@ class WorkerMap(object):
         if mode == 'no_container':
             modded_cmd = cmd
         elif mode == 'singularity':
-            modded_cmd = f'singularity run --writable {container_uri} {cmd}'
+            modded_cmd = f'singularity exec --writable {container_uri} {cmd}'
         else:
             raise NameError("Invalid container launch mode.")
+        logger.info("Command string :\n {}".format(modded_cmd))
 
         try:
             proc = subprocess.Popen(modded_cmd,
