@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import argparse
 import zmq
-# import uuid
 import os
 import sys
 import platform
@@ -791,7 +790,7 @@ def cli_run():
     parser.add_argument("-d", "--debug", action='store_true',
                         help="Enables debug logging")
 
-    print("Starting HTEX Intechange")
+    print("Starting HTEX Interchange")
     args = parser.parse_args()
 
     optionals = {}
