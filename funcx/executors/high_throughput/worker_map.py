@@ -177,10 +177,13 @@ class WorkerMap(object):
         if mode == 'no_container':
             modded_cmd = cmd
         elif mode == 'singularity':
-            modded_cmd = f'singularity exec --writable {container_uri} {cmd}'
+            modded_cmd = f'singularity exec {container_uri} {cmd}'
         else:
             raise NameError("Invalid container launch mode.")
-        modded_cmd = f'singularity exec --writable {container_uri} {cmd}'
+
+        # TODO: Tyler hardcoded edits here!
+        # modded_cmd = f'singularity exec --writable {container_uri} {cmd}'
+        modded_cmd = f'singularity exec /Users/tylerskluzacek/Desktop/matio.simg {cmd}'
         logger.info("Command string :\n {}".format(modded_cmd))
 
         try:
