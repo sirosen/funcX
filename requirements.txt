@@ -6,6 +6,6 @@ parsl
 configobj
 texttable
 psutil
-mdf_toolbox
+mdf_toolbox==0.4.10
 python-daemon
 
