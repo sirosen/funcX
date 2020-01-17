@@ -531,7 +531,7 @@ def cli_run():
                           heartbeat_threshold=int(args.hb_threshold),
                           heartbeat_period=int(args.hb_period),
                           logdir=args.logdir,
-                          debug=args.debug,
+                          debug=True,  # args.debug,  # TODO: Change back
                           mode=args.mode,
                           container_image=args.container_image,
                           poll_period=int(args.poll))
