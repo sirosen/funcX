@@ -45,7 +45,7 @@ class ThrottledBaseClient(globus_sdk.base.BaseClient):
         self.throttling_enabled = True
 
         self.timer = time.time()
-        self.period = 5
+        self.period = 50
         self.requests = 0
         super().__init__(*args, **kwargs)
 
