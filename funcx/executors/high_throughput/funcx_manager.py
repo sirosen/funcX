@@ -259,7 +259,7 @@ class Manager(object):
                         self.worker_map.register_worker(w_id, reg_info['worker_type'])
 
                     elif m_type == b'TASK_RET':
-                        logger.debug("Result received from worker: {}".format(w_id))
+                        logger.info("Result received from worker: {}".format(w_id))
                         logger.debug("[TASK_PULL_THREAD] Got result: {}".format(message))
                         self.pending_result_queue.put(message)
                         self.worker_map.put_worker(w_id)
@@ -303,7 +303,7 @@ class Manager(object):
 
                 else:
                     task_recv_counter += len(tasks)
-                    logger.debug("[TASK_PULL_THREAD] Got tasks: {} of {}".format([t['task_id'] for t in tasks],
+                    logger.info("[TASK_PULL_THREAD] Got tasks: {} of {}".format([t['task_id'] for t in tasks],
                                                                                  task_recv_counter))
 
                     for task in tasks:
@@ -377,7 +377,7 @@ class Manager(object):
                             task = self.task_queues[task_type].get()
                             worker_id = self.worker_map.get_worker(task_type)
 
-                            logger.debug("Sending task {} to {}".format(task['task_id'], worker_id))
+                            logger.info("Sending task {} to {}".format(task['task_id'], worker_id))
                             to_send = [worker_id, pickle.dumps(task['task_id']), task['buffer']]
                             self.funcx_task_socket.send_multipart(to_send)
                             logger.debug("Sending complete!")
@@ -412,6 +412,7 @@ class Manager(object):
             if len(items) >= self.max_queue_size or time.time() > last_beat + push_poll_period:
                 last_beat = time.time()
                 if items:
+                    logger.info("Sending result!!!!")
                     self.result_outgoing.send_multipart(items)
                     items = []
 

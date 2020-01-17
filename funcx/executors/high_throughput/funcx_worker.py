@@ -163,7 +163,7 @@ def cli_run():
                          int(args.port),
                          args.logdir,
                          worker_type=args.type,
-                         debug=True,)  # args.debug, )  # TODO: Change back. 
+                         debug=True,)  # args.debug, )  # TODO: Change back.
     worker.start()
     return
 
