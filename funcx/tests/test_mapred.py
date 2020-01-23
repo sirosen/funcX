@@ -3,6 +3,7 @@ import sys
 import argparse
 import time
 import funcx
+import os
 from funcx import FuncXClient, make_map
 from funcx.serialize import FuncXSerializer
 from itertools import chain
@@ -126,6 +127,7 @@ def test_map(n=100, endpoint_id=None, chunkcount=None, workers=None):
     # print("Time to complete {} tasks (of 10us each): {:8.3f} s ".format(n, delta))
     data = {'tasks': n,
             'chunkcount': chunkcount,
+            'tput': n/delta,
             'time': delta,
             'workers': workers,
             'task_dur_s': 0.00001}
@@ -138,17 +140,23 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument("-e", "--endpoint", required=True)
     parser.add_argument("-n", "--num_total", default="1000")
-    parser.add_argument("-w", "--workers", default="2")
+    # parser.add_argument("-w", "--workers", default="2")
     args = parser.parse_args()
     global fxc
     fxc = FuncXClient()
 
+    config_lines = open(os.path.expanduser('~/.funcx/testing/config.py')).readlines()
+    m = [line.strip() for line in config_lines if 'max_workers_per_node' in line][0]
+    print(m)
+    workers = int(m.strip(',').split('=')[1])
+    print("workers :", workers)
+
     for i in range(3):
-        test_map(n=int(args.num_total), chunkcount=1, workers=int(args.workers), endpoint_id=args.endpoint)
-        test_map(n=int(args.num_total), chunkcount=2, workers=int(args.workers), endpoint_id=args.endpoint)
-        test_map(n=int(args.num_total), chunkcount=4, workers=int(args.workers), endpoint_id=args.endpoint)
-        test_map(n=int(args.num_total), chunkcount=8, workers=int(args.workers), endpoint_id=args.endpoint)
-        test_map(n=int(args.num_total), chunkcount=16, workers=int(args.workers), endpoint_id=args.endpoint)
-        #test_map(n=int(args.num_total), chunkcount=32, endpoint_id=args.endpoint)
-        #test_map(n=int(args.num_total), chunkcount=64, endpoint_id=args.endpoint)
-        #test_map(n=int(args.num_total), chunkcount=128, endpoint_id=args.endpoint)
+        test_map(n=int(args.num_total), chunkcount=1, workers=workers, endpoint_id=args.endpoint)
+        test_map(n=int(args.num_total), chunkcount=2, workers=workers, endpoint_id=args.endpoint)
+        test_map(n=int(args.num_total), chunkcount=4, workers=workers, endpoint_id=args.endpoint)
+        test_map(n=int(args.num_total), chunkcount=8, workers=workers, endpoint_id=args.endpoint)
+        test_map(n=int(args.num_total), chunkcount=16, workers=workers, endpoint_id=args.endpoint)
+        test_map(n=int(args.num_total), chunkcount=32, workers=workers, endpoint_id=args.endpoint)
+        test_map(n=int(args.num_total), chunkcount=64, workers=workers, endpoint_id=args.endpoint)
+
