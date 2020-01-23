@@ -18,14 +18,17 @@ import json
 print("Funcx version: ", funcx.__version__)
 print("Funcx path: ", funcx.__path__)
 
+
 def funcx_sum(items):
     # import time
     # x = len(list(items))
     # time.sleep(x * 0.00001) # 10us
     # return sum(items)
-    return type(items) # [i * 2 for i in items]
+    return type(items)  # [i * 2 for i in items]
+
 
 from functools import wraps
+
 
 def make_map(func):
 
@@ -38,13 +41,15 @@ def make_map(func):
 
 from itertools import islice
 
+
 def getchunks(iterable, chunksize=100, chunkcount=None):
     item_count = len(iterable)
     if chunkcount is not None:
         chunksize = math.ceil(item_count / chunkcount)
         #print("Chunksize : ", chunksize)
     for index in range(0, item_count, chunksize):
-        yield islice(iterable, index, index + chunksize) # islice will stop if final > length
+        yield islice(iterable, index, index + chunksize)  # islice will stop if final > length
+
 
 class FuncxMap(map):
 
@@ -54,10 +59,10 @@ class FuncxMap(map):
         self.chunksize = chunksize
         print(fn)
 
-    #def __repr__(self):
+    # def __repr__(self):
     #    return self.__str__()
 
-    #def __str__(self):
+    # def __str__(self):
     #    return f'<fmap>'
 
     def __iter__(self):
@@ -78,6 +83,7 @@ def fmap(fn, iters, chunksize=10, chunkcount=None, endpoint_id=None):
     mapped_res = map(funcx_run, getchunks(iters, chunksize=chunksize, chunkcount=chunkcount))
 
     return mapped_res
+
 
 def double(x):
     return x * 2
@@ -106,7 +112,7 @@ def test_map(n=100, endpoint_id=None, chunkcount=None, workers=None):
     # print("Time to launch {} tasks: {:8.3f} s".format(n, delta))
     # task_info = list(chain.from_iterable(f))
     task_info = list(f)
-    #for i in task_info:
+    # for i in task_info:
     #    print("Item in f :", i)
 
     # print("Task info : ", task_info)
@@ -119,15 +125,13 @@ def test_map(n=100, endpoint_id=None, chunkcount=None, workers=None):
     # print("Time to complete {} tasks (of 10us each): {:8.3f} s ".format(n, delta))
     data = {'tasks': n,
             'chunkcount': chunkcount,
-            'tput': n/delta,
+            'tput': n / delta,
             'time': delta,
             'workers': workers,
             'task_dur_s': 0.00001}
 
     print(json.dumps(data))
     # print(list(chain.from_iterable(task_info))) # We can't do this bit yet.
-
-
 
 
 class timer(object):
@@ -143,7 +147,8 @@ class timer(object):
         res = self.func(*args, **kwargs)
         d = time.time() - s
         return {'ttc': d,
-                'result' : res}
+                'result': res}
+
 
 """
 def timer(func):
@@ -155,8 +160,10 @@ def timer(func):
     return mapify
 """
 
+
 def double(x):
-    return [i*2 for i in x]
+    return [i * 2 for i in x]
+
 
 def test_basic(endpoint_id):
 
@@ -167,15 +174,12 @@ def test_basic(endpoint_id):
     func_uuid = fxc.register_function(map_fn,
                                       container_uuid='3861862b-152e-49a4-b15e-9a5da4205cad',
                                       description="A sum function")
-
-
-    res = fxc.run([1,2,3,4,5], endpoint_id=endpoint_id, function_id=func_uuid)
+    res = fxc.run([1, 2, 3, 4, 5], endpoint_id=endpoint_id, function_id=func_uuid)
 
     print("Sleeping")
     time.sleep(2)
 
     print("Result : ", fxc.get_result(res))
-
 
 
 if __name__ == '__main__':
@@ -187,15 +191,12 @@ if __name__ == '__main__':
     global fxc
     fxc = FuncXClient()
 
-    config_lines = open(os.path.expanduser('~/.funcx/testing_1/config.py')).readlines()
+    config_lines = open(os.path.expanduser('~/.funcx/testing/config.py')).readlines()
     m = [line.strip() for line in config_lines if 'max_workers_per_node' in line][0]
     print(m)
     workers = int(m.strip(',').split('=')[1])
     print("workers :", workers)
 
-    test_basic(endpoint_id=args.endpoint)
-    # test_map(n=int(args.num_total), chunkcount=10, workers=workers, endpoint_id=args.endpoint)
-    """
     for i in range(3):
         test_map(n=int(args.num_total), chunkcount=1, workers=workers, endpoint_id=args.endpoint)
         test_map(n=int(args.num_total), chunkcount=2, workers=workers, endpoint_id=args.endpoint)
@@ -204,4 +205,3 @@ if __name__ == '__main__':
         test_map(n=int(args.num_total), chunkcount=16, workers=workers, endpoint_id=args.endpoint)
         test_map(n=int(args.num_total), chunkcount=32, workers=workers, endpoint_id=args.endpoint)
         test_map(n=int(args.num_total), chunkcount=64, workers=workers, endpoint_id=args.endpoint)
-    """
