@@ -34,7 +34,7 @@ class ThrottledBaseClient(globus_sdk.base.BaseClient):
 
     """
     # Max requests per second, in a 5 second period
-    DEFAULT_MAX_REQUESTS = 10000
+    DEFAULT_MAX_REQUESTS = 100
     # Max size is 2Mb
     DEFAULT_MAX_REQUEST_SIZE = 2 * 2 ** 20
 
