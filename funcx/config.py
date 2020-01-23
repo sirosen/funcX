@@ -61,7 +61,7 @@ class Config(RepresentationMixin):
 
         # Scaling mechanics
         self.provider = provider
-        self.scaling_enabled = True
+        self.scaling_enabled = scaling_enabled
 
         # Connection info
         self.worker_ports = worker_ports
@@ -72,7 +72,7 @@ class Config(RepresentationMixin):
         self.max_workers_per_node = max_workers_per_node
         self.cores_per_worker = cores_per_worker
         self.mem_per_worker = mem_per_worker
-        self.launch_cmd = None
+        self.launch_cmd = launch_cmd
 
         # Tuning info
         self.worker_mode = worker_mode
