@@ -536,7 +536,7 @@ class Interchange(object):
 
         try:
             logger.debug("Starting strategy.")
-            self.strategy.start(self)
+            # self.strategy.start(self)
         except RuntimeError as e:
             # This is raised when re-registering an endpoint as strategy already exists
             logger.debug("Failed to start strategy.")
