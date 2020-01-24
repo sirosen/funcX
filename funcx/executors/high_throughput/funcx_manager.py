@@ -247,8 +247,10 @@ class Manager(object):
             # Disabling the check on ready_worker_queue disables batching
             logger.debug("[TASK_PULL_THREAD] Loop start")
             pending_task_count = task_recv_counter - task_done_counter
-            ready_worker_count = self.worker_map.ready_worker_count()
-            logger.debug("[TASK_PULL_THREAD pending_task_count: {}, Ready_worker_count: {}".format(
+            # ready_worker_count = self.worker_map.ready_worker_count()
+            ready_worker_count = 128 # Super bad hack for perf measurements
+            
+            logger.debug("[TASK_PULL_THREAD pending_task_count: {} Ready_worker_count: {}".format(
                 pending_task_count, ready_worker_count))
 
             if time.time() > last_beat + self.heartbeat_period:
