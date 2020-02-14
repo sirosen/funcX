@@ -73,16 +73,13 @@ class code_text_dill(fxPicker_shared):
         super().__init__()
 
     def serialize(self, data):
-        name = data.__name__
-        body = dill.source.getsource(data)
-        x = codecs.encode(pickle.dumps((name, body)), 'base64').decode()
+        x = codecs.encode(dill.dumps(data), 'base64').decode()
         return self.identifier + x
 
     def deserialize(self, payload):
         chomped = self.chomp(payload)
-        name, body = pickle.loads(codecs.decode(chomped.encode(), 'base64'))
-        exec(body)
-        return locals()[name]
+        data = dill.loads(codecs.decode(chomped.encode(), 'base64'))
+        return data
 
 class code_text_inspect(fxPicker_shared):
     """ We use dill to get the source code out of the function object
