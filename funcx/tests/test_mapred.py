@@ -5,6 +5,8 @@ import time
 import funcx
 import os
 from funcx import FuncXClient, make_map
+from funcx import timer
+
 from funcx.serialize import FuncXSerializer
 from itertools import chain
 from functools import partial
@@ -12,22 +14,17 @@ import math
 import pickle
 import json
 
+# funcx.set_stream_logger()
 print("Funcx version: ", funcx.__version__)
 print("Funcx path: ", funcx.__path__)
 
 
 def funcx_sum(items):
-    import time
-    x = len(list(items))
-    time.sleep(x * 0.00001)  # 10us
-    return x
-
-
-def test_basic(endpoint_uuid):
-    payload = [1, 2, 3, 4, 66]
-    res = fxc.run(payload, endpoint_id=endpoint_uuid, function_id=func_uuid)
-    print(res)
-    fxc.get_result(res)
+    # import time
+    # x = len(list(items))
+    # time.sleep(x * 0.00001) # 10us
+    # return sum(items)
+    return type(items)  # [i * 2 for i in items]
 
 
 from functools import wraps
@@ -38,6 +35,7 @@ def make_map(func):
     @wraps(func)
     def mapify(iters):
         return map(func, iters)
+
     return mapify
 
 
@@ -92,15 +90,15 @@ def double(x):
 
 
 def wait(list_of_fn_uuids):
-    # print("Waiting on : ", list_of_fn_uuids)
+    print("Waiting on : ", list_of_fn_uuids)
     for f in list_of_fn_uuids:
         while True:
             try:
                 res = fxc.get_result(f)
-                # print("Got result : ", res)
+                print("Got result : ", res)
                 yield res
             except Exception as e:
-                # print("No result yet : {}".format(e))
+                print("No result yet : {}".format(e))
                 time.sleep(0.5)
             else:
                 break
@@ -109,7 +107,7 @@ def wait(list_of_fn_uuids):
 def test_map(n=100, endpoint_id=None, chunkcount=None, workers=None):
     start = time.time()
     f = fmap(funcx_sum, range(n), chunkcount=chunkcount, endpoint_id=endpoint_id)
-    #f = fmap(double, range(n), chunksize=int(n/10), endpoint_id=endpoint_id)
+    # f = fmap(double, range(n), chunksize=int(n/10), endpoint_id=endpoint_id)
     delta = time.time() - start
     # print("Time to launch {} tasks: {:8.3f} s".format(n, delta))
     # task_info = list(chain.from_iterable(f))
@@ -119,7 +117,7 @@ def test_map(n=100, endpoint_id=None, chunkcount=None, workers=None):
 
     # print("Task info : ", task_info)
     for t in wait(task_info):
-        #print("Got result : ", t)
+        print("Got result : ", t)
         pass
 
     # print("map object: ", f)
@@ -127,13 +125,62 @@ def test_map(n=100, endpoint_id=None, chunkcount=None, workers=None):
     # print("Time to complete {} tasks (of 10us each): {:8.3f} s ".format(n, delta))
     data = {'tasks': n,
             'chunkcount': chunkcount,
-            'tput': n/delta,
+            'tput': n / delta,
             'time': delta,
             'workers': workers,
             'task_dur_s': 0.00001}
 
     print(json.dumps(data))
     # print(list(chain.from_iterable(task_info))) # We can't do this bit yet.
+
+
+
+class timer(object):
+    def __init__(self, func):
+        self.func = func
+        self.__name__ = "timer"
+
+    def __call__(self, *args, **kwargs):
+
+        print("Called")
+        import time
+        s = time.time()
+        res = self.func(*args, **kwargs)
+        d = time.time() - s
+        return {'ttc': d,
+                'result': res}
+
+
+"""
+def timer(func):
+
+    @wraps(func)
+    def mapify(iters):
+        return iters
+
+    return mapify
+"""
+
+
+def double(x):
+    return [i * 2 for i in x]
+
+
+def test_basic(endpoint_id):
+
+    fxc.fx_serializer.use_custom('03\n', 'code')
+
+    map_fn = timer(double)
+
+    func_uuid = fxc.register_function(map_fn,
+                                      container_uuid='3861862b-152e-49a4-b15e-9a5da4205cad',
+                                      description="A sum function")
+    res = fxc.run([1, 2, 3, 4, 5], endpoint_id=endpoint_id, function_id=func_uuid)
+
+    print("Sleeping")
+    time.sleep(2)
+
+    print("Result : ", fxc.get_result(res))
 
 
 if __name__ == '__main__':
@@ -145,12 +192,15 @@ if __name__ == '__main__':
     global fxc
     fxc = FuncXClient()
 
-    config_lines = open(os.path.expanduser('~/.funcx/testing/config.py')).readlines()
+    config_lines = open(os.path.expanduser('~/.funcx/testing_1/config.py')).readlines()
     m = [line.strip() for line in config_lines if 'max_workers_per_node' in line][0]
     print(m)
     workers = int(m.strip(',').split('=')[1])
     print("workers :", workers)
 
+    test_basic(endpoint_id=args.endpoint)
+    # test_map(n=int(args.num_total), chunkcount=10, workers=workers, endpoint_id=args.endpoint)
+    """
     for i in range(3):
         test_map(n=int(args.num_total), chunkcount=1, workers=workers, endpoint_id=args.endpoint)
         test_map(n=int(args.num_total), chunkcount=2, workers=workers, endpoint_id=args.endpoint)
@@ -159,4 +209,4 @@ if __name__ == '__main__':
         test_map(n=int(args.num_total), chunkcount=16, workers=workers, endpoint_id=args.endpoint)
         test_map(n=int(args.num_total), chunkcount=32, workers=workers, endpoint_id=args.endpoint)
         test_map(n=int(args.num_total), chunkcount=64, workers=workers, endpoint_id=args.endpoint)
-
+    """
