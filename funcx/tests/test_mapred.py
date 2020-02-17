@@ -136,7 +136,6 @@ def test_map(n=100, endpoint_id=None, chunkcount=None, workers=None):
 
 class timer(object):
     def __init__(self, func):
-        self.func = func
         self.__name__ = "timer"
 
     def __call__(self, *args, **kwargs):
@@ -181,6 +180,20 @@ def test_basic(endpoint_id):
 
     print("Result : ", fxc.get_result(res))
 
+    fxc.fx_serializer.use_custom('03\n', 'code')
+
+    map_fn = timer(double)
+
+    func_uuid = fxc.register_function(map_fn,
+                                      container_uuid='3861862b-152e-49a4-b15e-9a5da4205cad',
+                                      description="A sum function")
+    res = fxc.run([1, 2, 3, 4, 5], endpoint_id=endpoint_id, function_id=func_uuid)
+
+    print("Sleeping")
+    time.sleep(2)
+
+    print("Result : ", fxc.get_result(res))
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
@@ -191,12 +204,15 @@ if __name__ == '__main__':
     global fxc
     fxc = FuncXClient()
 
-    config_lines = open(os.path.expanduser('~/.funcx/testing/config.py')).readlines()
+    config_lines = open(os.path.expanduser('~/.funcx/testing_1/config.py')).readlines()
     m = [line.strip() for line in config_lines if 'max_workers_per_node' in line][0]
     print(m)
     workers = int(m.strip(',').split('=')[1])
     print("workers :", workers)
 
+    test_basic(endpoint_id=args.endpoint)
+    # test_map(n=int(args.num_total), chunkcount=10, workers=workers, endpoint_id=args.endpoint)
+    """
     for i in range(3):
         test_map(n=int(args.num_total), chunkcount=1, workers=workers, endpoint_id=args.endpoint)
         test_map(n=int(args.num_total), chunkcount=2, workers=workers, endpoint_id=args.endpoint)
@@ -205,3 +221,4 @@ if __name__ == '__main__':
         test_map(n=int(args.num_total), chunkcount=16, workers=workers, endpoint_id=args.endpoint)
         test_map(n=int(args.num_total), chunkcount=32, workers=workers, endpoint_id=args.endpoint)
         test_map(n=int(args.num_total), chunkcount=64, workers=workers, endpoint_id=args.endpoint)
+    """
