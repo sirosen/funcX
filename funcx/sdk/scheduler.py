@@ -1,9 +1,7 @@
 import time
-import random
 import logging
 from collections import defaultdict
 from threading import Thread
-
 from funcx.sdk.client import FuncXClient
 
 logger = logging.getLogger(__name__)
@@ -22,24 +20,18 @@ class timer(object):
         start = time.time()
         res = self.func(*args, **kwargs)
         runtime = time.time() - start
-        return {
-            'runtime': runtime,
-            'result': res
-        }
+        return {'runtime': runtime,
+                'result': res}
 
 
 class FuncXScheduler:
-    STRATEGIES = ['round-robin', 'random', 'fastest',
-                  'fastest-with-exploration']
-
-    def __init__(self, fxc=None, endpoints=None, strategy='roundrobin',
-                 *args, **kwargs):
-        self._fxc = fxc or FuncXClient(*args, **kwargs)
+    def __init__(self, fxc, endpoints=None):
+        self._fxc = fxc
         # Special Dill serialization so that wrapped methods work correctly
         self._fxc.fx_serializer.use_custom('03\n', 'code')
 
         # List of all FuncX endpoints we can execute on
-        self._endpoints = list(set(endpoints)) or []
+        self._endpoints = set(endpoints) or set()
 
         # Average times for each function on each endpoint
         # TODO: this info is too unrealistic to have
@@ -49,12 +41,6 @@ class FuncXScheduler:
         # Track all pending tasks
         self._pending_tasks = {}
         self._results = {}
-
-        # Scheduling strategy
-        if strategy not in self.STRATEGIES:
-            raise ValueError("strategy must be one of {}"
-                             .format(self.STRATEGIES))
-        self.strategy = strategy
 
         # Start a thread to wait for results and record runtimes
         self._watchdog_sleep_time = 0.1  # in seconds
@@ -71,7 +57,7 @@ class FuncXScheduler:
         wrapped_function = timer(function)
         return self._fxc.register_function(wrapped_function, *args, **kwargs)
 
-    def run(self, *args, function_id, asynchronous=False, **kwargs):
+    def run(self, *args, function_id=None, asynchronous=False, **kwargs):
         endpoint_id = self._choose_best_endpoint(*args,
                                                  function_id=function_id,
                                                  **kwargs)
@@ -106,41 +92,10 @@ class FuncXScheduler:
         else:
             raise Exception("Task pending")
 
-    def _round_robin(self, *args, function_id, **kwargs):
-        if not hasattr(self, '_rr_count'):
-            self._rr_count = 0
-
-        endpoint = self._endpoints[self._rr_count]
-        self._rr_count = (self._rr_count + 1) % len(self._endpoints)
-        return endpoint
-
-    def _fastest(self, *args, function_id, exploration=False, **kwargs):
-        if not hasattr(self, '_next_endpoint'):
-            self._next_endpoint = defaultdict(int)
-
-        # Try each endpoint once, and then start choosing the best one
-        if self._next_endpoint[function_id] < len(self._endpoints):
-            endpoint = self._endpoints[self._next_endpoint[function_id]]
-            self._next_endpoint[function_id] += 1
-            return endpoint
-        elif exploration and random.random() < 0.2:
-            return random.choice(self._endpoints)
-        else:
-            endpoint, _ = min(self._runtimes[function_id].items(),
-                              key=lambda x: x[1])
-            return endpoint
-
-    def _choose_best_endpoint(self, *args, **kwargs):
-        if self.strategy == 'round-robin':
-            return self._round_robin(*args, **kwargs)
-        elif self.strategy == 'random':
-            return random.choice(self._endpoints)
-        elif self.strategy == 'fastest':
-            return self._fastest(self, *args, **kwargs)
-        elif self.strategy == 'fastest-with-exploration':
-            return self._fastest(self, *args, exploration=True, **kwargs)
-        else:
-            raise NotImplementedError("TODO: implement other stategies")
+    def _choose_best_endpoint(self, *args, function_id, **kwargs):
+        # TODO: actually choose something smartly
+        import random
+        return random.choice(list(self._endpoints))
 
     def _wait_for_results(self):
 
@@ -193,17 +148,16 @@ if __name__ == "__main__":
 
     endpoints = [
         # add your own funcx endpoints
-        # '4b116d3c-1703-4f8f-9f6f-39921e5864df',  # public tutorial endpoint
+        '4b116d3c-1703-4f8f-9f6f-39921e5864df',  # public tutorial endpoint
     ]
 
     fxc = FuncXClient()
-    sched = FuncXScheduler(fxc, endpoints=endpoints,
-                           strategy='fastest-with-exploration')
+    sched = FuncXScheduler(fxc, endpoints=endpoints)
     func_uuid = sched.register_function(funcx_sum, description="Summer")
     payload = [2, 34]
 
     task_ids = []
-    for i in range(10):
+    for i in range(1):
         task_id = sched.run(payload, function_id=func_uuid)
         task_ids.append(task_id)
         print('task_id:', task_id)
