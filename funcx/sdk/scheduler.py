@@ -106,6 +106,12 @@ class FuncXScheduler:
                                                       self._local_result_queue))
         self._local_worker_process.start()
 
+        # Scheduling strategy
+        if strategy not in self.STRATEGIES:
+            raise ValueError("strategy must be one of {}"
+                             .format(self.STRATEGIES))
+        self.strategy = strategy
+
         # Start a thread to wait for results and record runtimes
         self._watchdog_sleep_time = 0.01  # in seconds
         self._watchdog_thread = Thread(target=self._wait_for_results)
