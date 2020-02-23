@@ -41,8 +41,10 @@ class timer(object):
         start = time.time()
         res = self.func(*args, **kwargs)
         runtime = time.time() - start
-        return {'runtime': runtime,
-                'result': res}
+        return {
+            'runtime': runtime,
+            'result': res
+        }
 
 
 class FuncXScheduler:
@@ -103,6 +105,12 @@ class FuncXScheduler:
                                                 args=(self._local_task_queue,
                                                       self._local_result_queue))
         self._local_worker_process.start()
+
+        # Scheduling strategy
+        if strategy not in self.STRATEGIES:
+            raise ValueError("strategy must be one of {}"
+                             .format(self.STRATEGIES))
+        self.strategy = strategy
 
         # Start a thread to wait for results and record runtimes
         self._watchdog_sleep_time = 0.01  # in seconds
