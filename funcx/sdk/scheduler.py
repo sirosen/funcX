@@ -32,7 +32,7 @@ class FuncXScheduler:
     STRATEGIES = ['round-robin', 'random', 'fastest',
                   'fastest-with-exploration']
 
-    def __init__(self, fxc=None, endpoints=None, strategy='roundrobin',
+    def __init__(self, fxc=None, endpoints=None, strategy='round-robin',
                  *args, **kwargs):
         self._fxc = fxc or FuncXClient(*args, **kwargs)
         # Special Dill serialization so that wrapped methods work correctly
