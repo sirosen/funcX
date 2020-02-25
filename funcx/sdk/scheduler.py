@@ -118,12 +118,17 @@ class FuncXScheduler:
         if not hasattr(self, '_next_endpoint'):
             self._next_endpoint = defaultdict(int)
 
+        # Tracked runtimes, if any
+        runtimes = list(self._runtimes[function_id].items())
+
         # Try each endpoint once, and then start choosing the best one
         if self._next_endpoint[function_id] < len(self._endpoints):
             endpoint = self._endpoints[self._next_endpoint[function_id]]
             self._next_endpoint[function_id] += 1
             return endpoint
         elif exploration and random.random() < 0.2:
+            return random.choice(self._endpoints)
+        elif len(runtimes) == 0:  # No runtimes recorded yet
             return random.choice(self._endpoints)
         else:
             endpoint, _ = min(self._runtimes[function_id].items(),
@@ -161,8 +166,10 @@ class FuncXScheduler:
                         raise
                     continue
 
-                logger.debug('[WATCHDOG] Got result for task {} with runtime {}'
-                             .format(task_id, res['runtime']))
+                logger.debug('[WATCHDOG] Got result for task {} from '
+                             'endpoint {} with runtime {}'
+                             .format(task_id, info['endpoint_id'],
+                                     res['runtime']))
                 self._update_average(task_id, new_time=res['runtime'])
                 self._results[task_id] = res['result']
                 to_delete.add(task_id)
@@ -183,31 +190,3 @@ class FuncXScheduler:
         new_avg = (old_avg * num_times + new_time) / (num_times + 1)
         self._runtimes[function_id][endpoint_id] = new_avg
         self._num_executions[function_id][endpoint_id] += 1
-
-
-def funcx_sum(items):
-    return sum(items)
-
-
-if __name__ == "__main__":
-
-    endpoints = [
-        # add your own funcx endpoints
-        # '4b116d3c-1703-4f8f-9f6f-39921e5864df',  # public tutorial endpoint
-    ]
-
-    fxc = FuncXClient()
-    sched = FuncXScheduler(fxc, endpoints=endpoints,
-                           strategy='fastest-with-exploration')
-    func_uuid = sched.register_function(funcx_sum, description="Summer")
-    payload = [2, 34]
-
-    task_ids = []
-    for i in range(10):
-        task_id = sched.run(payload, function_id=func_uuid)
-        task_ids.append(task_id)
-        print('task_id:', task_id)
-
-    for task_id in task_ids:
-        res = sched.get_result(task_id, block=True)
-        print('Got res:', res)
