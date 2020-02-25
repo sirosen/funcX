@@ -112,6 +112,15 @@ class FuncXScheduler:
                              .format(self.STRATEGIES))
         self.strategy = strategy
 
+        # Start a thread to do local execution
+        self._functions = {}
+        self._local_task_queue = Queue()
+        self._local_result_queue = Queue()
+        self._local_worker_thread = Thread(target=LocalExecutor,
+                                           args=(self._local_task_queue,
+                                                 self._local_result_queue))
+        self._local_worker_thread.start()
+
         # Start a thread to wait for results and record runtimes
         self._watchdog_sleep_time = 0.01  # in seconds
         self._watchdog_thread = Thread(target=self._wait_for_results)
