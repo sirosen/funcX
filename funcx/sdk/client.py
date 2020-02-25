@@ -7,6 +7,7 @@ from fair_research_login import NativeClient, JSONTokenStorage
 from funcx.serialize import FuncXSerializer
 # from funcx.sdk.utils.futures import FuncXFuture
 from funcx.sdk.utils import throttling
+from funcx.errors import MalformedResponse
 
 logger = logging.getLogger(__name__)
 
@@ -312,3 +313,34 @@ class FuncXClient(throttling.ThrottledBaseClient):
 
         # Return the result
         return r.data['function_uuid']
+
+    def register_container(self, location, container_type,  name='', description=''):
+        """Register a container with the funcX service.
+
+        Parameters
+        ----------
+        location : str
+            The location of the container (e.g., its docker url). Required
+        container_type : str
+            The type of containers that will be used (Singularity, Shifter, Docker). Required
+
+        name : str
+            A name for the container. Default = ''
+        description : str
+            A description to associate with the container. Default = ''
+
+        Returns
+        -------
+        str
+            The id of the container
+        """
+        container_path = f'containers'
+
+        payload = {'name': name, 'location': location, 'description': description, 'type': container_type}
+
+        r = self.post(container_path, json_body=payload)
+        if r.http_status is not 200:
+            raise Exception(r)
+
+        # Return the result
+        return r.data['container_id']
