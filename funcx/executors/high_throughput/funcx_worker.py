@@ -5,6 +5,8 @@ import argparse
 import zmq
 import sys
 import pickle
+from queue import Queue
+import threading
 
 from parsl.app.errors import RemoteExceptionWrapper
 
@@ -110,8 +112,26 @@ class FuncXWorker(object):
 
             logger.info("Executing task...")
 
-            try:
+            q = Queue()
+            def execute_thread():
+                timeout = 20
                 result = self.execute_task(msg)
+                q.put(result)
+
+            try:
+                t1 = threading.Thread(target=execute_thread, args=())
+                t1.start()
+                
+                t_init = time.time()
+                while True:
+                    if not q.empty():
+                        result = q.get()
+                        break
+                    elif time.time() - t_init >= timeout:
+                        result = "[funcX worker] TIMEOUT FAILURE"
+                        break
+                    else:
+                        time.sleep(0.5)
                 serialized_result = self.serialize(result)
             except Exception as e:
                 logger.exception(f"Caught an exception {e}")
