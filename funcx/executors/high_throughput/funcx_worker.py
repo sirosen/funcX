@@ -86,7 +86,7 @@ class FuncXWorker(object):
 
         while True:
 
-            logger.debug("Sending result")
+            logger.info("Sending result")
 
             self.task_socket.send_multipart([task_type,  # Byte encoded
                                              pickle.dumps(result)])
@@ -96,10 +96,10 @@ class FuncXWorker(object):
                 # Kill the worker after accepting death in message to manager.
                 exit()
 
-            logger.debug("Waiting for task")
+            logger.info("Waiting for task")
             p_task_id, msg = self.task_socket.recv_multipart()
             task_id = pickle.loads(p_task_id)
-            logger.debug(
+            logger.info(
                 "Received task_id:{} with task:{}".format(task_id, msg))
 
             if msg == b"KILL":
@@ -108,11 +108,12 @@ class FuncXWorker(object):
                 result = None
                 continue
 
-            logger.debug("Executing task...")
+            logger.info("Executing task...")
 
             try:
                 result = self.execute_task(msg)
                 serialized_result = self.serialize(result)
+                logger.info("Task execution complete!!!") 
             except Exception as e:
                 logger.exception(f"Caught an exception {e}")
                 result_package = {'task_id': task_id, 'exception': self.serialize(
