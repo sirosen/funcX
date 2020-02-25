@@ -245,6 +245,9 @@ class FuncXScheduler:
 
         times = [(e, t) for (e, t) in times if e not in exclude]
 
+        # Tracked runtimes, if any
+        runtimes = list(self._runtimes[function_id].items())
+
         # Try each endpoint once, and then start choosing the best one
         if not self._all_endpoints_explored or len(times) == 0:
             endpoint = self._endpoints[self._next_endpoint[function_id]]
