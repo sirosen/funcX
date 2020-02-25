@@ -49,18 +49,20 @@ class FuncXScheduler:
                   'fastest-with-exploration']
 
     def __init__(self, fxc=None, endpoints=None, strategy='round-robin',
-                 *args, **kwargs):
+                 use_full_exec_time=True, *args, **kwargs):
         self._fxc = fxc or FuncXClient(*args, **kwargs)
         # Special Dill serialization so that wrapped methods work correctly
         self._fxc.fx_serializer.use_custom('03\n', 'code')
 
         # List of all FuncX endpoints we can execute on
-        self._endpoints = (list(set(endpoints)) or []) + ['local']
+        self._endpoints = list(set(endpoints)) or []
 
         # Average times for each function on each endpoint
         # TODO: this info is too unrealistic to have
+        self._exec_times = defaultdict(lambda: defaultdict(float))
         self._runtimes = defaultdict(lambda: defaultdict(float))
         self._num_executions = defaultdict(lambda: defaultdict(int))
+        self.use_full_exec_time = use_full_exec_time
 
         # Track all pending tasks
         self._pending_tasks = {}
@@ -150,7 +152,10 @@ class FuncXScheduler:
             self._next_endpoint = defaultdict(int)
 
         # Tracked runtimes, if any
-        runtimes = list(self._runtimes[function_id].items())
+        if self.use_full_exec_time:
+            times = list(self._exec_times[function_id].items())
+        else:
+            times = list(self._runtimes[function_id].items())
 
         # Try each endpoint once, and then start choosing the best one
         if self._next_endpoint[function_id] < len(self._endpoints):
@@ -159,11 +164,10 @@ class FuncXScheduler:
             return endpoint
         elif exploration and random.random() < 0.2:
             return random.choice(self._endpoints)
-        elif len(runtimes) == 0:  # No runtimes recorded yet
+        elif len(times) == 0:  # No runtimes recorded yet
             return random.choice(self._endpoints)
         else:
-            endpoint, _ = min(self._runtimes[function_id].items(),
-                              key=lambda x: x[1])
+            endpoint, _ = min(times, key=lambda x: x[1])
             return endpoint
 
     def _choose_best_endpoint(self, *args, **kwargs):
@@ -195,7 +199,7 @@ class FuncXScheduler:
                     watchdog_logger.debug('Got result for task {} from '
                                           'endpoint local with runtime {}'
                                           .format(task_id, res['runtime']))
-                    self._update_average(task_id, new_time=res['runtime'])
+                    self._update_average(task_id, res)
                     self._results[task_id] = res['result']
                     to_delete.add(task_id)
 
@@ -225,7 +229,7 @@ class FuncXScheduler:
                                       'endpoint {} with runtime {}'
                                       .format(task_id, info['endpoint_id'],
                                               res['runtime']))
-                self._update_average(task_id, new_time=res['runtime'])
+                self._update_average(task_id, res)
                 self._results[task_id] = res['result']
                 to_delete.add(task_id)
 
@@ -236,15 +240,22 @@ class FuncXScheduler:
             for task_id in to_delete:
                 del self._pending_tasks[task_id]
 
-    def _update_average(self, task_id, new_time):
+    def _update_average(self, task_id, result):
         info = self._pending_tasks[task_id]
         function_id = info['function_id']
         endpoint_id = info['endpoint_id']
 
+        new_exec_time = time.time() - info['time_sent']
         num_times = self._num_executions[function_id][endpoint_id]
+        old_avg = self._exec_times[function_id][endpoint_id]
+        new_avg = (old_avg * num_times + new_exec_time) / (num_times + 1)
+        self._exec_times[function_id][endpoint_id] = new_avg
+
+        new_runtime = result['runtime']
         old_avg = self._runtimes[function_id][endpoint_id]
-        new_avg = (old_avg * num_times + new_time) / (num_times + 1)
+        new_avg = (old_avg * num_times + new_runtime) / (num_times + 1)
         self._runtimes[function_id][endpoint_id] = new_avg
+
         self._num_executions[function_id][endpoint_id] += 1
 
     def _run_locally(self, *args, function_id, **kwargs):
