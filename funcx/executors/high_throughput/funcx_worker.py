@@ -13,6 +13,7 @@ from parsl.app.errors import RemoteExceptionWrapper
 from funcx import set_file_logger
 from funcx.serialize import FuncXSerializer
 
+import time
 
 class FuncXWorker(object):
     """ The FuncX worker
@@ -127,9 +128,9 @@ class FuncXWorker(object):
                     if not q.empty():
                         result = q.get()
                         break
-                    elif time.time() - t_init >= timeout:
-                        result = "[funcX worker] TIMEOUT FAILURE"
-                        break
+                    #elif time.time() - t_init >= timeout:
+                    #    result = "[funcX worker] TIMEOUT FAILURE"
+                    #    break
                     else:
                         time.sleep(0.5)
                 serialized_result = self.serialize(result)
