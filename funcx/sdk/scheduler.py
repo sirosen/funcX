@@ -4,7 +4,8 @@ import random
 import logging
 from collections import defaultdict
 from threading import Thread
-from queue import Queue, Empty
+import multiprocessing as mp
+from queue import Empty
 
 try:
     from termcolor import colored
@@ -76,12 +77,12 @@ class FuncXScheduler:
 
         # Start a thread to do local execution
         self._functions = {}
-        self._local_task_queue = Queue()
-        self._local_result_queue = Queue()
-        self._local_worker_thread = Thread(target=LocalExecutor,
-                                           args=(self._local_task_queue,
-                                                 self._local_result_queue))
-        self._local_worker_thread.start()
+        self._local_task_queue = mp.Queue()
+        self._local_result_queue = mp.Queue()
+        self._local_worker_process = mp.Process(target=LocalExecutor,
+                                                args=(self._local_task_queue,
+                                                      self._local_result_queue))
+        self._local_worker_process.start()
 
         # Start a thread to wait for results and record runtimes
         self._watchdog_sleep_time = 0.1  # in seconds
@@ -196,11 +197,7 @@ class FuncXScheduler:
                     local_output = self._local_result_queue.get_nowait()
                     res = local_output['result']
                     task_id = local_output['task_id']
-                    watchdog_logger.debug('Got result for task {} from '
-                                          'endpoint local with runtime {}'
-                                          .format(task_id, res['runtime']))
-                    self._update_average(task_id, res)
-                    self._results[task_id] = res['result']
+                    self._record_result(task_id, res)
                     to_delete.add(task_id)
 
                 except Empty:
@@ -225,12 +222,7 @@ class FuncXScheduler:
                         raise
                     continue
 
-                watchdog_logger.debug('Got result for task {} from '
-                                      'endpoint {} with runtime {}'
-                                      .format(task_id, info['endpoint_id'],
-                                              res['runtime']))
-                self._update_average(task_id, res)
-                self._results[task_id] = res['result']
+                self._record_result(task_id, res)
                 to_delete.add(task_id)
 
                 # Sleep, to prevent being throttled
@@ -240,18 +232,27 @@ class FuncXScheduler:
             for task_id in to_delete:
                 del self._pending_tasks[task_id]
 
-    def _update_average(self, task_id, result):
+    def _record_result(self, task_id, result):
+        info = self._pending_tasks[task_id]
+        exec_time = time.time() - info['time_sent']
+        time_taken = exec_time if self.use_full_exec_time else result['runtime']
+
+        watchdog_logger.debug('Got result for task {} from '
+                              'endpoint {} with time {}'
+                              .format(task_id, info['endpoint_id'], time_taken))
+        self._update_average(task_id, result['runtime'], exec_time)
+        self._results[task_id] = result['result']
+
+    def _update_average(self, task_id, new_runtime, new_exec_time):
         info = self._pending_tasks[task_id]
         function_id = info['function_id']
         endpoint_id = info['endpoint_id']
 
-        new_exec_time = time.time() - info['time_sent']
         num_times = self._num_executions[function_id][endpoint_id]
         old_avg = self._exec_times[function_id][endpoint_id]
         new_avg = (old_avg * num_times + new_exec_time) / (num_times + 1)
         self._exec_times[function_id][endpoint_id] = new_avg
 
-        new_runtime = result['runtime']
         old_avg = self._runtimes[function_id][endpoint_id]
         new_avg = (old_avg * num_times + new_runtime) / (num_times + 1)
         self._runtimes[function_id][endpoint_id] = new_avg
