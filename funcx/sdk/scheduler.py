@@ -387,6 +387,13 @@ class FuncXScheduler:
         self._pending[task_id] = info
         self._pending_by_endpoint[endpoint_id].put((task_id, info))
 
+    def _add_pending_task(self, task_id, function_id, endpoint_id):
+        self._pending_tasks[task_id] = {
+            'time_sent': time.time(),
+            'function_id': function_id,
+            'endpoint_id': endpoint_id
+        }
+
     def _record_result(self, task_id, result):
         info = self._pending[task_id]
 
@@ -433,6 +440,8 @@ class FuncXScheduler:
         self._num_executions[func][end] += 1
 
     def _run_locally(self, *args, function_id, backup_of=None, **kwargs):
+
+        task_id = str(uuid.uuid4())
 
         task_id = str(uuid.uuid4())
 
