@@ -5,7 +5,7 @@ import logging
 from collections import defaultdict
 from threading import Thread
 import multiprocessing as mp
-from queue import Empty
+from queue import Queue, Empty
 
 try:
     from termcolor import colored
@@ -65,8 +65,9 @@ class FuncXScheduler:
         self._num_executions = defaultdict(lambda: defaultdict(int))
         self.use_full_exec_time = use_full_exec_time
 
-        # Track all pending tasks
-        self._pending_tasks = {}
+        # Track all pending tasks (organized by endpoint) and results
+        self._pending = {}
+        self._pending_by_endpoint = defaultdict(Queue)
         self._results = {}
 
         # Scheduling strategy
@@ -121,7 +122,7 @@ class FuncXScheduler:
         return task_id
 
     def get_result(self, task_id, block=False):
-        if task_id not in self._pending_tasks and task_id not in self._results:
+        if task_id not in self._pending and task_id not in self._results:
             raise ValueError('Unknown task id {}'.format(task_id))
 
         if block:
@@ -201,7 +202,13 @@ class FuncXScheduler:
             # Convert to list first because otherwise, the dict may throw an
             # exception that its size has changed during iteration. This can
             # happen when new pending tasks are added to the dict.
-            for task_id, info in list(self._pending_tasks.items()):
+            for endpoint_id, tasks in list(self._pending_by_endpoint.items()):
+
+                # Poll only the first pending task for this endpoint
+                try:
+                    task_id, info = tasks.get_nowait()
+                except Empty:  # No pending tasks for this endpoint
+                    continue
 
                 # Local tasks will come from local results queue
                 if info['endpoint_id'] == 'local':
@@ -225,17 +232,20 @@ class FuncXScheduler:
 
             # Stop tracking all tasks which have now returned
             for task_id in to_delete:
-                del self._pending_tasks[task_id]
+                del self._pending[task_id]
 
     def _add_pending_task(self, task_id, function_id, endpoint_id):
-        self._pending_tasks[task_id] = {
+        info = {
             'time_sent': time.time(),
             'function_id': function_id,
             'endpoint_id': endpoint_id
         }
 
+        self._pending[task_id] = info
+        self._pending_by_endpoint[endpoint_id].put((task_id, info))
+
     def _record_result(self, task_id, result):
-        info = self._pending_tasks[task_id]
+        info = self._pending[task_id]
         exec_time = time.time() - info['time_sent']
         time_taken = exec_time if self.use_full_exec_time else result['runtime']
 
@@ -246,7 +256,7 @@ class FuncXScheduler:
         self._results[task_id] = result['result']
 
     def _update_average(self, task_id, new_runtime, new_exec_time):
-        info = self._pending_tasks[task_id]
+        info = self._pending[task_id]
         function_id = info['function_id']
         endpoint_id = info['endpoint_id']
 
