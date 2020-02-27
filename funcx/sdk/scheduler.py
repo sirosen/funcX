@@ -105,11 +105,6 @@ class FuncXScheduler:
         endpoint_id = self._choose_best_endpoint(*args,
                                                  function_id=function_id,
                                                  **kwargs)
-        info = {
-            'time_sent': time.time(),
-            'function_id': function_id,
-            'endpoint_id': endpoint_id
-        }
 
         if endpoint_id == 'local':
             task_id = self._run_locally(*args, function_id=function_id,
@@ -118,11 +113,11 @@ class FuncXScheduler:
             task_id = self._fxc.run(*args, function_id=function_id,
                                     endpoint_id=endpoint_id,
                                     asynchronous=asynchronous, **kwargs)
+            self._add_pending_task(task_id, function_id, endpoint_id)
 
         logger.debug('Sent function {} to endpoint {} with task_id {}'
                      .format(function_id, endpoint_id, task_id))
 
-        self._pending_tasks[task_id] = info
         return task_id
 
     def get_result(self, task_id, block=False):
@@ -232,6 +227,13 @@ class FuncXScheduler:
             for task_id in to_delete:
                 del self._pending_tasks[task_id]
 
+    def _add_pending_task(self, task_id, function_id, endpoint_id):
+        self._pending_tasks[task_id] = {
+            'time_sent': time.time(),
+            'function_id': function_id,
+            'endpoint_id': endpoint_id
+        }
+
     def _record_result(self, task_id, result):
         info = self._pending_tasks[task_id]
         exec_time = time.time() - info['time_sent']
@@ -261,13 +263,18 @@ class FuncXScheduler:
 
     def _run_locally(self, *args, function_id, **kwargs):
 
+        task_id = str(uuid.uuid4())
+
         data = {
             'function': self._functions[function_id],
             'args': args,
             'kwargs': kwargs,
-            'task_id': str(uuid.uuid4())
+            'task_id': task_id
         }
 
+        # Must add to pending tasks before putting on queue, to prevent
+        # race condition when checking for results
+        self._add_pending_task(task_id, function_id, 'local')
         self._local_task_queue.put(data)
 
-        return data['task_id']
+        return task_id
