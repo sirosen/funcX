@@ -388,15 +388,17 @@ class FuncXScheduler:
         self._pending_by_endpoint[endpoint_id].put((task_id, info))
 
     def _add_pending_task(self, task_id, function_id, endpoint_id):
-        self._pending_tasks[task_id] = {
+        info = {
             'time_sent': time.time(),
             'function_id': function_id,
             'endpoint_id': endpoint_id
         }
 
+        self._pending[task_id] = info
+        self._pending_by_endpoint[endpoint_id].put((task_id, info))
+
     def _record_result(self, task_id, result):
         info = self._pending[task_id]
-
         exec_time = time.time() - info['time_sent']
         time_taken = exec_time if self.use_full_exec_time else result['runtime']
 
