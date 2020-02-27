@@ -214,6 +214,12 @@ class FuncXScheduler:
                 if info['endpoint_id'] == 'local':
                     continue
 
+                # Only poll after some fraction of expected runtime has passed
+                if not self._ready_to_poll(task_id):
+                    # Put popped task back into front of queue
+                    tasks.queue.appendleft((task_id, info))
+                    continue
+
                 # If remote, ask funcX service for result
                 try:
                     res = self._fxc.get_result(task_id)
@@ -222,6 +228,9 @@ class FuncXScheduler:
                         watchdog_logger.warn('Got unexpected exception:\t{}'
                                              .format(e))
                         raise
+
+                    # Put popped task back into front of queue
+                    tasks.queue.appendleft((task_id, info))
                     continue
 
                 self._record_result(task_id, res)
@@ -233,6 +242,16 @@ class FuncXScheduler:
             # Stop tracking all tasks which have now returned
             for task_id in to_delete:
                 del self._pending[task_id]
+
+    def _ready_to_poll(self, task_id, p=0.3):
+        info = self._pending[task_id]
+        function_id = info['function_id']
+        endpoint_id = info['endpoint_id']
+
+        elapsed_time = time.time() - info['time_sent']
+        expected_time = self._exec_times[function_id][endpoint_id]
+
+        return expected_time < 1.0 or elapsed_time > p * expected_time
 
     def _add_pending_task(self, task_id, function_id, endpoint_id):
         info = {
