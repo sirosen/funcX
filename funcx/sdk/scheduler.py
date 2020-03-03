@@ -50,7 +50,8 @@ class FuncXScheduler:
                   'fastest-with-exploration']
 
     def __init__(self, fxc=None, endpoints=None, strategy='round-robin',
-                 use_full_exec_time=True, *args, **kwargs):
+                 use_full_exec_time=True, log_level='INFO',
+                 *args, **kwargs):
         self._fxc = fxc or FuncXClient(*args, **kwargs)
         # Special Dill serialization so that wrapped methods work correctly
         self._fxc.fx_serializer.use_custom('03\n', 'code')
@@ -75,6 +76,10 @@ class FuncXScheduler:
             raise ValueError("strategy must be one of {}"
                              .format(self.STRATEGIES))
         self.strategy = strategy
+
+        # Set logging levels
+        logger.setLevel(log_level)
+        watchdog_logger.setLevel(log_level)
 
         # Start a thread to do local execution
         self._functions = {}
