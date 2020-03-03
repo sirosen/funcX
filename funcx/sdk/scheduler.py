@@ -112,6 +112,10 @@ class FuncXScheduler:
                              .format(self.STRATEGIES))
         self.strategy = strategy
 
+        # Set logging levels
+        logger.setLevel(log_level)
+        watchdog_logger.setLevel(log_level)
+
         # Start a thread to do local execution
         self._functions = {}
         self._local_task_queue = mp.Queue()
