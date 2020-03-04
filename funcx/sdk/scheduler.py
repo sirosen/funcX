@@ -80,8 +80,10 @@ class FuncXScheduler:
         # Set logging levels
         logger.setLevel(log_level)
         watchdog_logger.setLevel(log_level)
+        self.execution_log = []
 
         # Start a thread to do local execution
+        self.running = True
         self._functions = {}
         self._local_task_queue = mp.Queue()
         self._local_result_queue = mp.Queue()
@@ -141,6 +143,11 @@ class FuncXScheduler:
         else:
             raise Exception("Task pending")
 
+    def stop(self):
+        self.running = False
+        self._local_worker_process.terminate()
+        self._watchdog_thread.join()
+
     def _round_robin(self, *args, function_id, **kwargs):
         if not hasattr(self, '_rr_count'):
             self._rr_count = 0
@@ -189,7 +196,7 @@ class FuncXScheduler:
 
         watchdog_logger.info('Thread started')
 
-        while True:
+        while self.running:
             to_delete = set()
 
             # Check if there are any local results ready
@@ -278,6 +285,9 @@ class FuncXScheduler:
                               .format(task_id, info['endpoint_id'], time_taken))
         self._update_average(task_id, result['runtime'], exec_time)
         self._results[task_id] = result['result']
+
+        info['exec_time'] = exec_time
+        self.execution_log.append(info)
 
     def _update_average(self, task_id, new_runtime, new_exec_time):
         info = self._pending[task_id]
