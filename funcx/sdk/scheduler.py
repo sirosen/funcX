@@ -264,6 +264,10 @@ class FuncXScheduler:
         function_id = info['function_id']
         endpoint_id = info['endpoint_id']
 
+        # If no prior information, always poll
+        if endpoint_id not in self._avg_exec_time[function_id]:
+            return True
+
         elapsed_time = time.time() - info['time_sent']
         expected_time = self._avg_exec_time[function_id][endpoint_id]
 
