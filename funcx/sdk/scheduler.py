@@ -111,6 +111,7 @@ class FuncXScheduler:
             raise ValueError("strategy must be one of {}"
                              .format(self.STRATEGIES))
         self.strategy = strategy
+        logger.info(f"Scheduler using strategy {strategy}")
 
         # Set logging levels
         logger.setLevel(log_level)
@@ -262,9 +263,9 @@ class FuncXScheduler:
 
         # Tracked runtimes, if any
         if self.use_full_exec_time:
-            times = list(self._exec_times[function_id].items())
+            times = list(self._avg_exec_time[function_id].items())
         else:
-            times = list(self._runtimes[function_id].items())
+            times = list(self._avg_runtime[function_id].items())
 
         # Try each endpoint once, and then start choosing the best one
         if not self._all_endpoints_explored or len(times) == 0:
@@ -405,6 +406,7 @@ class FuncXScheduler:
 
     def _record_result(self, task_id, result):
         info = self._pending[task_id]
+
         exec_time = time.time() - info['time_sent']
         time_taken = exec_time if self.use_full_exec_time else result['runtime']
 
