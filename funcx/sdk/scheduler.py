@@ -174,14 +174,19 @@ class FuncXScheduler:
         if self._next_endpoint[function_id] < len(self._endpoints):
             endpoint = self._endpoints[self._next_endpoint[function_id]]
             self._next_endpoint[function_id] += 1
-            return endpoint
-        elif exploration and random.random() < 0.2:
-            return random.choice(self._endpoints)
+        elif exploration:
+            pairs = [(e, 1 / t) for e, t in times]
+            _, max_throughput = max(pairs, key=lambda x: x[1])
+            pairs = [(e, tp) for (e, tp) in pairs if tp / max_throughput > 0.5]
+            endpoints, throughputs = zip(*pairs)
+            weights = normalize(throughputs)
+            endpoint = random.choices(endpoints, weights=weights)[0]
         elif len(times) == 0:  # No runtimes recorded yet
-            return random.choice(self._endpoints)
+            endpoint = random.choice(self._endpoints)
         else:
             endpoint, _ = min(times, key=lambda x: x[1])
-            return endpoint
+
+        return endpoint
 
     def _choose_best_endpoint(self, *args, **kwargs):
         if self.strategy == 'round-robin':
@@ -220,6 +225,9 @@ class FuncXScheduler:
             # happen when new pending tasks are added to the dict.
             for endpoint_id, tasks in list(self._pending_by_endpoint.items()):
 
+                # Sleep, to prevent being throttled
+                time.sleep(self._watchdog_sleep_time)
+
                 # Poll only the first pending task for this endpoint
                 try:
                     task_id, info = tasks.get_nowait()
@@ -239,21 +247,18 @@ class FuncXScheduler:
                 # If remote, ask funcX service for result
                 try:
                     res = self._fxc.get_result(task_id)
+                    self._record_result(task_id, res)
                 except Exception as e:
-                    if not str(e).startswith("Task pending"):
-                        watchdog_logger.warn('Got unexpected exception:\t{}'
-                                             .format(e))
-                        raise
+                    if str(e).startswith("Task pending"):
+                        # Put popped task back into front of queue
+                        tasks.queue.appendleft((task_id, info))
+                        continue
+                    else:
+                        watchdog_logger.error('Exception on task {}:\t{}'
+                                              .format(task_id, e))
+                        self._results[task_id] = f'Exception: {e}'
 
-                    # Put popped task back into front of queue
-                    tasks.queue.appendleft((task_id, info))
-                    continue
-
-                self._record_result(task_id, res)
                 to_delete.add(task_id)
-
-                # Sleep, to prevent being throttled
-                time.sleep(self._watchdog_sleep_time)
 
             # Stop tracking all tasks which have now returned
             for task_id in to_delete:
@@ -347,3 +352,8 @@ def avg(x):
         x = x.queue
 
     return sum(x) / len(x)
+
+
+def normalize(xs):
+    total = sum(xs)
+    return [x / total for x in xs]
