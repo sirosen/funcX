@@ -102,10 +102,11 @@ class FuncXScheduler:
         self._watchdog_thread.start()
 
     def add_endpoint(self, endpoint_id):
-        self._endpoints.add(endpoint_id)
+        self._endpoints.append(endpoint_id)
+        self._all_endpoints_explored = False
 
     def remove_endpoint(self, endpoint_id):
-        self._endpoints.discard(endpoint_id)
+        self._endpoints.remove(endpoint_id)
 
     def register_function(self, function, *args, **kwargs):
         wrapped_function = timer(function)
@@ -163,6 +164,8 @@ class FuncXScheduler:
     def _fastest(self, *args, function_id, exploration=False, **kwargs):
         if not hasattr(self, '_next_endpoint'):
             self._next_endpoint = defaultdict(int)
+        if not hasattr(self, '_all_endpoints_explored'):
+            self._all_endpoints_explored = False
 
         # Tracked runtimes, if any
         if self.use_full_exec_time:
@@ -171,11 +174,12 @@ class FuncXScheduler:
             times = list(self._avg_runtime[function_id].items())
 
         # Try each endpoint once, and then start choosing the best one
-        if self._next_endpoint[function_id] < len(self._endpoints) \
-                or len(times) == 0:  # No runtimes recorded yet
-            n = self._next_endpoint[function_id] % len(self._endpoints)
-            endpoint = self._endpoints[n]
+        if not self._all_endpoints_explored or len(times) == 0:
+            endpoint = self._endpoints[self._next_endpoint[function_id]]
             self._next_endpoint[function_id] += 1
+            if self._next_endpoint[function_id] == len(self._endpoints):
+                self._all_endpoints_explored = True
+            self._next_endpoint[function_id] %= len(self._endpoints)
         elif exploration:
             pairs = [(e, 1 / t) for e, t in times]
             _, max_throughput = max(pairs, key=lambda x: x[1])
