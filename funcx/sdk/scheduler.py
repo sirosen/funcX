@@ -173,9 +173,9 @@ class FuncXScheduler:
         # Try each endpoint once, and then start choosing the best one
         if self._next_endpoint[function_id] < len(self._endpoints) \
                 or len(times) == 0:  # No runtimes recorded yet
-            endpoint = self._endpoints[self._next_endpoint[function_id]]
+            n = self._next_endpoint[function_id] % len(self._endpoints)
+            endpoint = self._endpoints[n]
             self._next_endpoint[function_id] += 1
-            self._next_endpoint[function_id] %= len(self._endpoints)
         elif exploration:
             pairs = [(e, 1 / t) for e, t in times]
             _, max_throughput = max(pairs, key=lambda x: x[1])
