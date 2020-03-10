@@ -171,9 +171,11 @@ class FuncXScheduler:
             times = list(self._avg_runtime[function_id].items())
 
         # Try each endpoint once, and then start choosing the best one
-        if self._next_endpoint[function_id] < len(self._endpoints):
+        if self._next_endpoint[function_id] < len(self._endpoints) \
+                or len(times) == 0:  # No runtimes recorded yet
             endpoint = self._endpoints[self._next_endpoint[function_id]]
             self._next_endpoint[function_id] += 1
+            self._next_endpoint[function_id] %= len(self._endpoints)
         elif exploration:
             pairs = [(e, 1 / t) for e, t in times]
             _, max_throughput = max(pairs, key=lambda x: x[1])
@@ -181,8 +183,6 @@ class FuncXScheduler:
             endpoints, throughputs = zip(*pairs)
             weights = normalize(throughputs)
             endpoint = random.choices(endpoints, weights=weights)[0]
-        elif len(times) == 0:  # No runtimes recorded yet
-            endpoint = random.choice(self._endpoints)
         else:
             endpoint, _ = min(times, key=lambda x: x[1])
 
