@@ -73,6 +73,7 @@ class FuncXScheduler:
         self._pending = {}
         self._pending_by_endpoint = defaultdict(Queue)
         self._results = {}
+        self._poll_count = 0
 
         # Scheduling strategy
         if strategy not in self.STRATEGIES:
@@ -97,7 +98,7 @@ class FuncXScheduler:
         self._local_worker_process.start()
 
         # Start a thread to wait for results and record runtimes
-        self._watchdog_sleep_time = 0.1  # in seconds
+        self._watchdog_sleep_time = 0.01  # in seconds
         self._watchdog_thread = Thread(target=self._wait_for_results)
         self._watchdog_thread.start()
 
@@ -250,6 +251,7 @@ class FuncXScheduler:
 
                 # If remote, ask funcX service for result
                 try:
+                    self._poll_count += 1
                     res = self._fxc.get_result(task_id)
                     self._record_result(task_id, res)
                 except Exception as e:
@@ -268,7 +270,7 @@ class FuncXScheduler:
             for task_id in to_delete:
                 del self._pending[task_id]
 
-    def _ready_to_poll(self, task_id, p=0.3):
+    def _ready_to_poll(self, task_id, p=0.5):
         info = self._pending[task_id]
         function_id = info['function_id']
         endpoint_id = info['endpoint_id']
@@ -280,7 +282,7 @@ class FuncXScheduler:
         elapsed_time = time.time() - info['time_sent']
         expected_time = self._avg_exec_time[function_id][endpoint_id]
 
-        return expected_time < 1.0 or elapsed_time > p * expected_time
+        return expected_time < 0.5 or elapsed_time > p * expected_time
 
     def _add_pending_task(self, task_id, function_id, endpoint_id):
         info = {
