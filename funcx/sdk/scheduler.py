@@ -1,3 +1,5 @@
+import os
+import sys
 import time
 import uuid
 import random
@@ -48,6 +50,7 @@ class timer(object):
 class FuncXScheduler:
     STRATEGIES = ['round-robin', 'random', 'fastest',
                   'fastest-with-exploration']
+    BLACKLIST_ERRORS = [ModuleNotFoundError, MemoryError]
 
     def __init__(self, fxc=None, endpoints=None, strategy='round-robin',
                  use_full_exec_time=True, log_level='INFO',
@@ -59,6 +62,8 @@ class FuncXScheduler:
 
         # List of all FuncX endpoints we can execute on
         self._endpoints = list(set(endpoints)) or []
+        # Track which endpoints a function can't run on
+        self._blacklists = defaultdict(set)
 
         # Average times for each function on each endpoint
         self._last_n_times = last_n_times
@@ -170,12 +175,20 @@ class FuncXScheduler:
 
         # Tracked runtimes, if any
         if self.use_full_exec_time:
-            times = list(self._avg_exec_time[function_id].items())
+            all_times = list(self._avg_exec_time[function_id].items())
         else:
-            times = list(self._avg_runtime[function_id].items())
+            all_times = list(self._avg_runtime[function_id].items())
+
+        # Filter out blacklisted endpoints
+        if len(self._blacklists[function_id]) == len(self._endpoints):
+            raise RuntimeError('All endpoints for function {} blacklisted!'
+                               .format(function_id))
+
+        times = [(e, t) for (e, t) in all_times
+                 if e not in self._blacklists[function_id]]
 
         # Try each endpoint once, and then start choosing the best one
-        if not self._all_endpoints_explored or len(times) == 0:
+        if not self._all_endpoints_explored or len(all_times) == 0:
             endpoint = self._endpoints[self._next_endpoint[function_id]]
             self._next_endpoint[function_id] += 1
             if self._next_endpoint[function_id] == len(self._endpoints):
@@ -260,6 +273,7 @@ class FuncXScheduler:
                         tasks.queue.appendleft((task_id, info))
                         continue
                     else:
+                        self._blacklist_if_needed(task_id)
                         watchdog_logger.error('Exception on task {}:\t{}'
                                               .format(task_id, e))
                         self._results[task_id] = f'Exception: {e}'
@@ -347,6 +361,15 @@ class FuncXScheduler:
         self._local_task_queue.put(data)
 
         return task_id
+
+    def _blacklist_if_needed(self, task_id):
+        info = self._pending[task_id]
+        exc_type, _, _ = sys.exc_info()
+        if exc_type in self.BLACKLIST_ERRORS:
+            watchdog_logger.warn('Blacklisting endpoint {} for function {} due'
+                                 ' to exception'.format(info['endpoint_id'],
+                                                        info['function_id']))
+            self._blacklists[info['function_id']].add(info['endpoint_id'])
 
 
 ##############################################################################
