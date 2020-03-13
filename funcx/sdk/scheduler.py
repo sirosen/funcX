@@ -51,10 +51,11 @@ class FuncXScheduler:
     STRATEGIES = ['round-robin', 'random', 'fastest',
                   'fastest-with-exploration']
     BLACKLIST_ERRORS = [ModuleNotFoundError, MemoryError]
+    BACKUP_THRESHOLD = 1.3
 
     def __init__(self, fxc=None, endpoints=None, strategy='round-robin',
                  use_full_exec_time=True, log_level='INFO',
-                 last_n_times=3,
+                 last_n_times=3, max_backups=None,
                  *args, **kwargs):
         self._fxc = fxc or FuncXClient(*args, **kwargs)
         # Special Dill serialization so that wrapped methods work correctly
@@ -78,6 +79,9 @@ class FuncXScheduler:
         self._pending = {}
         self._pending_by_endpoint = defaultdict(Queue)
         self._results = {}
+        self._completed_tasks = set()
+        self._backups = defaultdict(set)
+        self.max_backups = max_backups or len(self._endpoints) - 1
         self._poll_count = 0
 
         # Scheduling strategy
@@ -120,10 +124,15 @@ class FuncXScheduler:
         self._functions[func_id] = wrapped_function
         return func_id
 
-    def run(self, *args, function_id, asynchronous=False, **kwargs):
-        endpoint_id = self._choose_best_endpoint(*args,
-                                                 function_id=function_id,
-                                                 **kwargs)
+    def run(self, *args, function_id, asynchronous=False, backup_of=None,
+            exclude=None, **kwargs):
+
+        # TODO: potential race condition since run can now be called from
+        # _send_backup_if_needed from watchdog thread concurrently with
+        # a user's call to it. should synchronize access to this method.
+
+        endpoint_id = self._choose_best_endpoint(*args, function_id=function_id,
+                                                 exclude=exclude, **kwargs)
 
         if endpoint_id == 'local':
             task_id = self._run_locally(*args, function_id=function_id,
@@ -132,12 +141,51 @@ class FuncXScheduler:
             task_id = self._fxc.run(*args, function_id=function_id,
                                     endpoint_id=endpoint_id,
                                     asynchronous=asynchronous, **kwargs)
-            self._add_pending_task(task_id, function_id, endpoint_id)
+            self._add_pending_task(*args, task_id=task_id,
+                                   function_id=function_id,
+                                   endpoint_id=endpoint_id,
+                                   backup_of=backup_of, **kwargs)
 
         logger.debug('Sent function {} to endpoint {} with task_id {}'
                      .format(function_id, endpoint_id, task_id))
 
         return task_id
+
+    def _send_backup_if_needed(self, task_id):
+        info = self._pending[task_id]
+        function_id = info['function_id']
+        endpoint_id = info['endpoint_id']
+
+        # Don't send backup jobs for backup jobs
+        if info['backup_of'] is not None:
+            return
+
+        # Don't send backup unless we know expected runtime
+        if endpoint_id not in self._avg_exec_time[function_id]:
+            return
+
+        # Don't send backup unless task is overdue
+        elapsed_time = time.time() - info['time_sent']
+        expected_time = self._avg_exec_time[function_id][endpoint_id]
+        if elapsed_time < self.BACKUP_THRESHOLD * expected_time:
+            return
+
+        # Don't send more than max number of backups
+        if len(self._backups[task_id]) >= self.max_backups:
+            return
+
+        # Don't send two copies of task to the same endpoint
+        exclude = [info['endpoint_id']]
+        for backup_id in self._backups[task_id]:
+            backup_info = self._pending[backup_id]
+            exclude.append(backup_info['endpoint_id'])
+
+        logger.debug('Sending backup task for task_id {}'.format(task_id))
+        backup_id = self.run(*info['args'], function_id=function_id,
+                             backup_of=task_id, exclude=exclude,
+                             **info['kwargs'])
+
+        self._backups[task_id].add(backup_id)
 
     def get_result(self, task_id, block=False):
         if task_id not in self._pending and task_id not in self._results:
@@ -151,6 +199,8 @@ class FuncXScheduler:
             res = self._results[task_id]
             del self._results[task_id]
             return res
+        elif task_id in self._completed_tasks:
+            raise Exception("Task result already returned")
         else:
             raise Exception("Task pending")
 
@@ -167,7 +217,8 @@ class FuncXScheduler:
         self._rr_count = (self._rr_count + 1) % len(self._endpoints)
         return endpoint
 
-    def _fastest(self, *args, function_id, exploration=False, **kwargs):
+    def _fastest(self, *args, function_id, exploration=False, exclude=None,
+                 **kwargs):
         if not hasattr(self, '_next_endpoint'):
             self._next_endpoint = defaultdict(int)
         if not hasattr(self, '_all_endpoints_explored'):
@@ -175,20 +226,21 @@ class FuncXScheduler:
 
         # Tracked runtimes, if any
         if self.use_full_exec_time:
-            all_times = list(self._avg_exec_time[function_id].items())
+            times = list(self._avg_exec_time[function_id].items())
         else:
-            all_times = list(self._avg_runtime[function_id].items())
+            times = list(self._avg_runtime[function_id].items())
 
         # Filter out blacklisted endpoints
-        if len(self._blacklists[function_id]) == len(self._endpoints):
-            raise RuntimeError('All endpoints for function {} blacklisted!'
-                               .format(function_id))
+        exclude = set(exclude or []) | self._blacklists[function_id]
 
-        times = [(e, t) for (e, t) in all_times
-                 if e not in self._blacklists[function_id]]
+        if len(exclude) == len(self._endpoints):
+            raise RuntimeError('All endpoints for function {} blacklisted'
+                               ' or already attempted!'.format(function_id))
+
+        times = [(e, t) for (e, t) in times if e not in exclude]
 
         # Try each endpoint once, and then start choosing the best one
-        if not self._all_endpoints_explored or len(all_times) == 0:
+        if not self._all_endpoints_explored or len(times) == 0:
             endpoint = self._endpoints[self._next_endpoint[function_id]]
             self._next_endpoint[function_id] += 1
             if self._next_endpoint[function_id] == len(self._endpoints):
@@ -206,15 +258,16 @@ class FuncXScheduler:
 
         return endpoint
 
-    def _choose_best_endpoint(self, *args, **kwargs):
+    def _choose_best_endpoint(self, *args, exclude=None, **kwargs):
         if self.strategy == 'round-robin':
             return self._round_robin(*args, **kwargs)
         elif self.strategy == 'random':
             return random.choice(self._endpoints)
         elif self.strategy == 'fastest':
-            return self._fastest(self, *args, **kwargs)
+            return self._fastest(self, *args, exclude=exclude, **kwargs)
         elif self.strategy == 'fastest-with-exploration':
-            return self._fastest(self, *args, exploration=True, **kwargs)
+            return self._fastest(self, *args, exclude=exclude,
+                                 exploration=True, **kwargs)
         else:
             raise NotImplementedError("TODO: implement other stategies")
 
@@ -271,6 +324,7 @@ class FuncXScheduler:
                     if str(e).startswith("Task pending"):
                         # Put popped task back into front of queue
                         tasks.queue.appendleft((task_id, info))
+                        self._send_backup_if_needed(task_id)
                         continue
                     else:
                         self._blacklist_if_needed(task_id)
@@ -298,11 +352,15 @@ class FuncXScheduler:
 
         return expected_time < 0.5 or elapsed_time > p * expected_time
 
-    def _add_pending_task(self, task_id, function_id, endpoint_id):
+    def _add_pending_task(self, *args, task_id, function_id, endpoint_id,
+                          backup_of=None, **kwargs):
         info = {
             'time_sent': time.time(),
             'function_id': function_id,
-            'endpoint_id': endpoint_id
+            'endpoint_id': endpoint_id,
+            'args': args,
+            'kwargs': kwargs,
+            'backup_of': backup_of
         }
 
         self._pending[task_id] = info
@@ -321,8 +379,17 @@ class FuncXScheduler:
         # Store runtime and exec time
         self._update_runtimes(task_id, result['runtime'], exec_time)
 
-        # Store result in results
-        self._results[task_id] = result['result']
+        # Get main task id in case this task is a backup task
+        main_task_id = info['backup_of'] or task_id
+
+        # Only store a copy of a result once per main task
+        if main_task_id not in self._completed_tasks:
+            self._results[main_task_id] = result['result']
+            self._completed_tasks.add(main_task_id)
+        else:
+            watchdog_logger.debug('Ignoring result for {} since another result '
+                                  'for its original task was already recorded'
+                                  .format(task_id))
 
         info['exec_time'] = exec_time
         self.execution_log.append(info)
@@ -344,7 +411,7 @@ class FuncXScheduler:
 
         self._num_executions[func][end] += 1
 
-    def _run_locally(self, *args, function_id, **kwargs):
+    def _run_locally(self, *args, function_id, backup_of=None, **kwargs):
 
         task_id = str(uuid.uuid4())
 
@@ -357,7 +424,9 @@ class FuncXScheduler:
 
         # Must add to pending tasks before putting on queue, to prevent
         # race condition when checking for results
-        self._add_pending_task(task_id, function_id, 'local')
+        self._add_pending_task(*args, task_id=task_id, function_id=function_id,
+                               endpoint_id='local', backup_of=backup_of,
+                               **kwargs)
         self._local_task_queue.put(data)
 
         return task_id
