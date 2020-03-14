@@ -30,6 +30,14 @@ class Config(RepresentationMixin):
         Select the mode of operation from no_container, singularity_reuse, singularity_single_use
         Default: no_container
 
+    scheduler_mode : str
+        Select the mode of how the container is managed from hard, soft
+        Default: soft
+
+    container_type : str
+        Select the type of container from Docker, Singularity, Shifter
+        Default: None
+
     scaling_enabled : Bool
         Allow Interchange to manage resource provisioning. If set to False, interchange
         will not do any scaling.
@@ -43,7 +51,6 @@ class Config(RepresentationMixin):
                  # Connection info
                  worker_ports=None,
                  worker_port_range=(54000, 55000),
-                 container_image=None,
                  # Scaling info
                  strategy=SimpleStrategy(),
                  max_workers_per_node=float('inf'),
@@ -52,6 +59,8 @@ class Config(RepresentationMixin):
                  launch_cmd=None,
                  # Tuning info
                  worker_mode='no_container',
+                 scheduler_mode='soft',
+                 container_type=None,
                  prefetch_capacity=10,
                  heartbeat_period=2,
                  heartbeat_threshold=10,
@@ -67,7 +76,6 @@ class Config(RepresentationMixin):
         # Connection info
         self.worker_ports = worker_ports
         self.worker_port_range = worker_port_range
-        self.container_image = container_image
 
         # Scaling info
         self.strategy = strategy
@@ -78,6 +86,8 @@ class Config(RepresentationMixin):
 
         # Tuning info
         self.worker_mode = worker_mode
+        self.scheduler_mode = scheduler_mode
+        self.container_type = container_type
         self.prefetch_capacity = prefetch_capacity
         self.heartbeat_period = heartbeat_period
         self.heartbeat_threshold = heartbeat_threshold

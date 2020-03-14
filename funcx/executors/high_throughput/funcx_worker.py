@@ -134,12 +134,13 @@ class FuncXWorker(object):
                     else:
                         time.sleep(0.5)
                 serialized_result = self.serialize(result)
+                logger.info("Task execution complete!!!") 
             except Exception as e:
                 logger.exception(f"Caught an exception {e}")
                 result_package = {'task_id': task_id, 'exception': self.serialize(
                     RemoteExceptionWrapper(*sys.exc_info()))}
             else:
-                logger.info("Execution completed without exception")
+                logger.debug("Execution completed without exception")
                 result_package = {'task_id': task_id,
                                   'result': serialized_result}
 
