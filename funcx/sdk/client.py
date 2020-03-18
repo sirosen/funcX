@@ -392,8 +392,30 @@ class FuncXClient(throttling.ThrottledBaseClient):
         # Return the result
         return r.data['container']
 
+    def get_endpoint_status(self, endpoint_uuid):
+        """Get the status reports for an endpoint.
+
+        Parameters
+        ----------
+        endpoint_uuid : str
+            UUID of the endpoint in question
+
+        Returns
+        -------
+        dict
+            The details of the endpoint's stats
+        """
+        stats_path = f'endpoints/{endpoint_uuid}/status'
+
+        r = self.get(stats_path)
+        if r.http_status is not 200:
+            raise Exception(r)
+
+        # Return the result
+        return r.data
+
     def register_function(self, function, function_name=None, container_uuid=None, description=None,
-                          public=False):
+                          public=False, group=None):
         """Register a function code with the funcX service.
 
         Parameters
@@ -408,6 +430,8 @@ class FuncXClient(throttling.ThrottledBaseClient):
             Description of the file
         public : bool
             Whether or not the function is publicly accessible. Default = False
+        group : str
+            A globus group uuid to share this function with
 
         Returns
         -------
@@ -424,7 +448,8 @@ class FuncXClient(throttling.ThrottledBaseClient):
                 "container_uuid": container_uuid,
                 "entry_point": function_name if function_name else function.__name__,
                 "description": description,
-                "public": public}
+                "public": public,
+                "group": group}
 
         logger.info("Registering function : {}".format(data))
 
