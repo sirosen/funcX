@@ -165,7 +165,8 @@ class WorkerMap(object):
                f'-a {address} '
                f'-p {worker_port} '
                f'-t {worker_type} '
-               f'--logdir={logdir}/{uid} ')
+               f'--logdir={logdir}/{uid} '
+               )
 
         logger.info("Command string :\n {}".format(cmd))
 
@@ -181,8 +182,8 @@ class WorkerMap(object):
         # logger.info("Command string :\n {}".format(modded_cmd))
         try:
             proc = subprocess.Popen(modded_cmd.split(),
-                                    stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE,
+                                    stdout=None,
+                                    stderr=None,
                                     shell=False)
 
         except Exception:
