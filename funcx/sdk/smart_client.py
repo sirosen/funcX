@@ -30,6 +30,22 @@ ch.setFormatter(logging.Formatter(colored("[WATCHDOG]  %(message)s", 'green')))
 watchdog_logger.addHandler(ch)
 
 
+class timer(object):
+    def __init__(self, func):
+        self.func = func
+        self.__name__ = "timer"
+
+    def __call__(self, *args, **kwargs):
+        import time
+        start = time.time()
+        res = self.func(*args, **kwargs)
+        runtime = time.time() - start
+        return {
+            'runtime': runtime,
+            'result': res
+        }
+
+
 class FuncXSmartClient(object):
     def __init__(self, fxc=None, log_level='DEBUG', *args, **kwargs):
 
@@ -55,7 +71,9 @@ class FuncXSmartClient(object):
         self._watchdog_thread.start()
 
     def register_function(self, function, *args, **kwargs):
-        return self._fxc.register_function(function, *args, **kwargs)
+        wrapped_function = timer(function)
+        func_id = self._fxc.register_function(wrapped_function, *args, **kwargs)
+        return func_id
 
     def run(self, *args, function_id, asynchronous=False, **kwargs):
         endpoint_id = 'UNDECIDED'
@@ -146,10 +164,11 @@ class FuncXSmartClient(object):
                               'endpoint {} with time {}'
                               .format(task_id, info['endpoint_id'], time_taken))
 
-        self._results[task_id] = result
+        self._results[task_id] = result['result']
         self._completed_tasks.add(task_id)
 
         info['exec_time'] = time_taken
+        info['runtime'] = result['runtime']
         self.execution_log.append(info)
 
 
