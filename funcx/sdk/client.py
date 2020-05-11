@@ -14,6 +14,7 @@ from funcx.errors import MalformedResponse
 
 logger = logging.getLogger(__name__)
 
+
 class FuncXClient(throttling.ThrottledBaseClient):
     """Main class for interacting with the funcX service
 
@@ -85,7 +86,6 @@ class FuncXClient(throttling.ThrottledBaseClient):
         """
         self.native_client.logout()
 
-
     def update_table(self, return_msg, task_id):
         """ Parses the return message from the service and updates the internal func_tables
 
@@ -140,7 +140,7 @@ class FuncXClient(throttling.ThrottledBaseClient):
             Status block containing "status" key.
         """
         if task_id in self.func_table:
-             return self.func_table[task_id]
+            return self.func_table[task_id]
 
         r = self.get("{task_id}/status".format(task_id=task_id))
         logger.debug("Response string : {}".format(r))
@@ -181,12 +181,11 @@ class FuncXClient(throttling.ThrottledBaseClient):
         """
         assert isinstance(task_id_list, list), "get_batch_status expects a list of task ids"
 
-
         pending_task_ids = [t for t in task_id_list if t not in self.func_table]
 
         results = {}
 
-        if pending_task_ids :
+        if pending_task_ids:
             payload = {'task_ids': pending_task_ids}
             r = self.post("/batch_status", json_body=payload)
             logger.debug("Response string : {}".format(r))
@@ -213,7 +212,8 @@ class FuncXClient(throttling.ThrottledBaseClient):
         """
         pass
 
-    def run(self, *args, endpoint_id=None, function_id=None, **kwargs):
+    def run(self, *args, endpoint_id=None, function_id=None,
+            asynchronous=False, **kwargs):
         """Initiate an invocation
 
         Parameters
@@ -340,7 +340,6 @@ class FuncXClient(throttling.ThrottledBaseClient):
             raise MalformedResponse(r)
 
         return r['task_uuids']
-
 
     def register_endpoint(self, name, endpoint_uuid, description=None):
         """Register an endpoint with the funcX service.
