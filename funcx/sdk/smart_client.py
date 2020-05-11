@@ -77,9 +77,9 @@ class FuncXSmartClient(object):
 
     def run(self, *args, function_id, asynchronous=False, **kwargs):
         endpoint_id = 'UNDECIDED'
-        task_id = self._fxc.run(*args, function_id=function_id,
-                                endpoint_id=endpoint_id,
-                                asynchronous=asynchronous, **kwargs)
+        task_id, endpoint_id = self._fxc.run(*args, function_id=function_id,
+                                             endpoint_id=endpoint_id,
+                                             asynchronous=asynchronous, **kwargs)
         self._add_pending_task(*args, task_id=task_id,
                                function_id=function_id,
                                endpoint_id=endpoint_id, **kwargs)
