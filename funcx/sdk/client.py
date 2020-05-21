@@ -261,7 +261,10 @@ class FuncXClient(throttling.ThrottledBaseClient):
         # Return the result
         return funcx_future
         """
-        return r['task_uuid'], r['endpoint']
+        if 'endpoint' in r:
+            return r['task_uuid'], r['endpoint']
+        else:
+            return r['task_uuid']
 
     def map_run(self, *args, endpoint_id=None, function_id=None, asynchronous=False, **kwargs):
         """Initiate an invocation
