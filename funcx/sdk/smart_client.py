@@ -47,7 +47,8 @@ class timer(object):
 
 
 class FuncXSmartClient(object):
-    def __init__(self, fxc=None, log_level='DEBUG', *args, **kwargs):
+    def __init__(self, fxc=None, batch_status=True, log_level='DEBUG',
+                 *args, **kwargs):
 
         self._fxc = fxc or FuncXClient(*args, **kwargs)
         # Special Dill serialization so that wrapped methods work correctly
@@ -57,6 +58,7 @@ class FuncXSmartClient(object):
         self._pending = {}
         self._results = {}
         self._completed_tasks = set()
+        self._use_batch_status = batch_status
 
         # Set logging levels
         logger.setLevel(log_level)
@@ -134,26 +136,55 @@ class FuncXSmartClient(object):
         while self.running:
             to_delete = set()
 
-            # Convert to list first because otherwise, the dict may throw an
-            # exception that its size has changed during iteration. This can
-            # happen when new pending tasks are added to the dict.
-            for task_id, info in list(self._pending.items()):
+            if self._use_batch_status:  # Query task statuses in a batch request
 
                 # Sleep, to prevent being throttled
                 time.sleep(self._watchdog_sleep_time)
 
-                try:
-                    res = self._fxc.get_result(task_id)
-                    self._record_result(task_id, res)
-                except Exception as e:
-                    if str(e).startswith("Task pending"):
+                task_ids = list(self._pending.keys())
+                batch_status = self._fxc.get_batch_status(task_ids)
+
+                for task_id, status in batch_status.items():
+
+                    if status['pending'] == 'True':
                         continue
-                    else:
+
+                    elif 'result' in status:
+                        self._record_result(task_id, status['result'])
+
+                    elif 'exception' in status:
+                        e = status['exception']
                         watchdog_logger.error('Exception on task {}:\t{}'
                                               .format(task_id, e))
                         self._results[task_id] = f'Exception: {e}'
 
-                to_delete.add(task_id)
+                    else:
+                        watchdog_logger.error('Unknown status for task {}:{}'
+                                              .format(task_id, status))
+
+                    to_delete.add(task_id)
+
+            else:   # Query task status one at a time
+                # Convert to list first because otherwise, the dict may throw an
+                # exception that its size has changed during iteration. This can
+                # happen when new pending tasks are added to the dict.
+                for task_id, info in list(self._pending.items()):
+
+                    # Sleep, to prevent being throttled
+                    time.sleep(self._watchdog_sleep_time)
+
+                    try:
+                        res = self._fxc.get_result(task_id)
+                        self._record_result(task_id, res)
+                    except Exception as e:
+                        if str(e).startswith("Task pending"):
+                            continue
+                        else:
+                            watchdog_logger.error('Exception on task {}:\t{}'
+                                                  .format(task_id, e))
+                            self._results[task_id] = f'Exception: {e}'
+
+                    to_delete.add(task_id)
 
             # Stop tracking all tasks which have now returned
             for task_id in to_delete:
