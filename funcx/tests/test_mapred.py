@@ -134,7 +134,6 @@ def test_map(n=100, endpoint_id=None, chunkcount=None, workers=None):
     # print(list(chain.from_iterable(task_info))) # We can't do this bit yet.
 
 
-
 class timer(object):
     def __init__(self, func):
         self.func = func

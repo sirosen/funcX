@@ -212,8 +212,7 @@ class FuncXClient(throttling.ThrottledBaseClient):
         """
         pass
 
-    def run(self, *args, endpoint_id=None, function_id=None,
-            asynchronous=False, **kwargs):
+    def run(self, *args, endpoint_id=None, function_id=None, asynchronous=False, **kwargs):
         """Initiate an invocation
 
         Parameters
