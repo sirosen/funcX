@@ -291,7 +291,10 @@ class FuncXClient(throttling.ThrottledBaseClient):
         if 'task_uuids' not in r:
             raise MalformedResponse(r)
 
-        return r['task_uuids']
+        if 'endpoints' in r:
+            return list(zip(r['task_uuids'], r['endpoints']))
+        else:
+            return r['task_uuids']
 
     def map_run(self, *args, endpoint_id=None, function_id=None, asynchronous=False, **kwargs):
         """Initiate an invocation

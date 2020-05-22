@@ -8,7 +8,7 @@ class Batch:
         self.tasks = []
         self.fx_serializer = FuncXSerializer()
 
-    def add(self, *args, endpoint_id=None, function_id=None, **kwargs):
+    def add(self, *args, endpoint_id='UNDECIDED', function_id=None, **kwargs):
         """Add an function invocation to a batch submission
 
         Parameters
@@ -35,6 +35,8 @@ class Batch:
 
         data = {'endpoint': endpoint_id,
                 'function': function_id,
+                'args': args,
+                'kwargs': kwargs,
                 'payload': payload}
 
         self.tasks.append(data)

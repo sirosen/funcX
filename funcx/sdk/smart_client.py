@@ -89,6 +89,22 @@ class FuncXSmartClient(object):
 
         return task_id
 
+    def create_batch(self):
+        return self._fxc.create_batch()
+
+    def batch_run(self, batch):
+        logger.info('Running batch with {} tasks'.format(len(batch.tasks)))
+        pairs = self._fxc.batch_run(batch)
+        for (task_id, endpoint), task in zip(pairs, batch.tasks):
+            self._add_pending_task(*task['args'], task_id=task_id,
+                                   function_id=task['function'],
+                                   endpoint_id=endpoint, **task['kwargs'])
+
+            logger.debug('Sent function {} to endpoint {} with task_id {}'
+                         .format(task['function'], endpoint, task_id))
+
+        return [task_id for (task_id, endpoint) in pairs]
+
     def get_result(self, task_id, block=False):
         if task_id not in self._pending and task_id not in self._results:
             raise ValueError('Unknown task id {}'.format(task_id))
