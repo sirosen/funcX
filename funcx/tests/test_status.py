@@ -7,7 +7,7 @@ from funcx import FuncXClient
 from funcx.serialize import FuncXSerializer
 fxs = FuncXSerializer()
 
-# funcx.set_stream_logger()
+funcx.set_stream_logger()
 
 def sum_yadu_new01(event):
     return sum(event)
@@ -43,7 +43,7 @@ def test2(fxc, ep_id):
     print("FN_UUID : ", fn_uuid)
     task_id = fxc.run(endpoint_id=ep_id, function_id=fn_uuid)
 
-    time.sleep(10)
+    time.sleep(2)
     r = fxc.get_task_status(task_id)
     if 'details' in r:
         s_buf = r['details']['result']
@@ -84,8 +84,8 @@ if __name__ == '__main__':
 
     print("FuncX version : ", funcx.__version__)
     fxc = FuncXClient()
-    test(fxc, args.endpoint)
-    test2(fxc, args.endpoint)
+    # test(fxc, args.endpoint)
+    # test2(fxc, args.endpoint)
     test3(fxc, args.endpoint)
-    #test4(fxc, args.endpoint)
+    test4(fxc, args.endpoint)
 

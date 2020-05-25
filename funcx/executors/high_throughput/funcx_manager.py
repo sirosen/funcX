@@ -147,7 +147,7 @@ class Manager(object):
         self.cores_per_workers = cores_per_worker
         self.available_mem_on_node = round(psutil.virtual_memory().available / (2**30), 1)
         self.max_worker_count = min(max_workers,
-                                    math.floor(self.cores_on_node / cores_per_worker))
+                                math.floor(self.cores_on_node / cores_per_worker))
         self.worker_map = WorkerMap(self.max_worker_count)
 
         self.internal_worker_port_range = internal_worker_port_range
@@ -247,10 +247,8 @@ class Manager(object):
             # Disabling the check on ready_worker_queue disables batching
             logger.debug("[TASK_PULL_THREAD] Loop start")
             pending_task_count = task_recv_counter - task_done_counter
-            # ready_worker_count = self.worker_map.ready_worker_count()
-            ready_worker_count = 128 # Super bad hack for perf measurements
-            
-            logger.debug("[TASK_PULL_THREAD pending_task_count: {} Ready_worker_count: {}".format(
+            ready_worker_count = self.worker_map.ready_worker_count()
+            logger.debug("[TASK_PULL_THREAD pending_task_count: {}, Ready_worker_count: {}".format(
                 pending_task_count, ready_worker_count))
 
             if time.time() > last_beat + self.heartbeat_period:

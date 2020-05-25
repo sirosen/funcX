@@ -44,17 +44,6 @@ class FuncXSerializer(object):
         return self.methods_for_code, self.methods_for_data
 
 
-    def use_custom(self, method_name, kind):
-        if kind == 'data':
-            method = self.methods_for_data[method_name]
-            self.methods_for_data = {method_name: method}  # Override
-        elif kind == 'code':
-            method = self.methods_for_code[method_name]
-            self.methods_for_code = {method_name: method}  # Override
-        else:
-            raise(Exception("Expected kind={code| data}"))
-        return
-
     def serialize(self, data):
         serialized = None
 
@@ -62,17 +51,15 @@ class FuncXSerializer(object):
             for method in self.methods_for_code.values():
                 try:
                     serialized = method.serialize(data)
-                    break
                 except Exception as e:
-                    logger.exception("Method {} did not work on code {}".format(method, data))
+                    logger.exception("Method {} did not work".format(method))
                     continue
         else:
             for method in self.methods_for_data.values():
                 try:
                     serialized = method.serialize(data)
-                    break
                 except Exception as e:
-                    logger.exception("Method {} did not work on data {}".format(method, data))
+                    logger.exception("Method {} did not work".format(method))
                     continue
 
         if serialized is None:
