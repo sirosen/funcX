@@ -75,6 +75,20 @@ class code_text_dill(fxPicker_shared):
     def serialize(self, data):
         name = data.__name__
         body = dill.source.getsource(data)
+
+        if body.startswith('import dill'):
+            # In this case, the serialized function not just a function 
+            # definition, but likely a wrapped function. At the time of
+            # deserialization, dill.loads(...) is called. This does not bind 
+            # the deserialized function to a variable name. So, this hack
+            # manually adds a variable binding to the deserialized function,
+            # so that it will be available in locals().
+            lines = body.strip('\n').split('\n')
+            assert(len(lines) == 2)
+            assert(lines[1].startswith('dill.loads'))
+            lines[1] = name + ' = ' + lines[1]
+            body = '\n'.join(lines)
+
         x = codecs.encode(pickle.dumps((name, body)), 'base64').decode()
         return self.identifier + x
 
@@ -114,7 +128,6 @@ def bar(x, y={'a':3}):
 
 
 if __name__ == '__main__' :
-
 
     bar(29)
     #print(json_base64.identifier)
