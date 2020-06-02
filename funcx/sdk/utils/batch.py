@@ -1,3 +1,5 @@
+from collections import defaultdict
+
 from funcx.serialize import FuncXSerializer
 
 
@@ -8,7 +10,8 @@ class Batch:
         self.tasks = []
         self.fx_serializer = FuncXSerializer()
 
-    def add(self, *args, endpoint_id='UNDECIDED', function_id=None, **kwargs):
+    def add(self, *args, endpoint_id='UNDECIDED', function_id=None, files=None,
+            **kwargs):
         """Add an function invocation to a batch submission
 
         Parameters
@@ -28,6 +31,12 @@ class Batch:
         """
         assert endpoint_id is not None, "endpoint_id key-word argument must be set"
         assert function_id is not None, "function_id key-word argument must be set"
+
+        assert('_globus_files' not in kwargs)
+        kwargs['_globus_files'] = defaultdict(list)
+        for globus_id, file_name in files or []:
+            file_name = file_name.lstrip('~/.globus_funcx').lstrip('/')
+            kwargs['_globus_files'][globus_id].append(file_name)
 
         ser_args = self.fx_serializer.serialize(args)
         ser_kwargs = self.fx_serializer.serialize(kwargs)

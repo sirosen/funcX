@@ -15,6 +15,7 @@ except ImportError:
     def colored(x, *args, **kwargs):
         return x
 
+from parsl.app.errors import RemoteExceptionWrapper
 from funcx.sdk.client import FuncXClient
 
 logger = logging.getLogger(__name__)
@@ -37,10 +38,38 @@ class timer(object):
 
     def __call__(self, *args, **kwargs):
         import time
+
+        # Get local Globus endpoint ID, if one exists
+        GLOBUS_ID = None
+        globus_id_file = os.path.expanduser('~/.globusonline/lta/client-id.txt')
+        if os.path.exists(globus_id_file):
+            with open(globus_id_file) as fh:
+                GLOBUS_ID = fh.read().strip()
+
+        # Transfer files needed from Globus
+        base_dir = os.path.expanduser('~/.globus_funcx')
+        start = time.time()
+        for end, files in kwargs['_globus_files'].items():
+            if end == GLOBUS_ID:  # If this endpoint, ensure local files exist
+                for f in files:
+                    path = os.path.join(base_dir, f)
+                    if not os.path.exists(path):
+                        raise FileNotFoundError(path)
+            else:  # Get files from other Globus endpoints
+                # TODO: pull files from Globus
+                raise FileNotFoundError(files)
+
+        del kwargs['_globus_files']
+        transfer_time = time.time() - start
+
+        # Run function and time execution
         start = time.time()
         res = self.func(*args, **kwargs)
         runtime = time.time() - start
+
+        # Return result with execution times
         return {
+            'transfer_time': transfer_time,
             'runtime': runtime,
             'result': res
         }
@@ -118,7 +147,10 @@ class FuncXSmartClient(object):
         if task_id in self._results:
             res = self._results[task_id]
             del self._results[task_id]
-            return res
+            if isinstance(res, RemoteExceptionWrapper):
+                res.reraise()
+            else:
+                return res
         elif task_id in self._completed_tasks:
             raise Exception("Task result already returned")
         else:
@@ -151,12 +183,14 @@ class FuncXSmartClient(object):
 
                     elif 'result' in status:
                         self._record_result(task_id, status['result'])
+                        print('Files:', status['result'])
+                        # print('Files:', status['result']['files_found'])
 
                     elif 'exception' in status:
                         e = status['exception']
                         watchdog_logger.error('Exception on task {}:\t{}'
                                               .format(task_id, e))
-                        self._results[task_id] = f'Exception: {e}'
+                        self._results[task_id] = e
 
                     else:
                         watchdog_logger.error('Unknown status for task {}:{}'
@@ -183,6 +217,7 @@ class FuncXSmartClient(object):
                             watchdog_logger.error('Exception on task {}:\t{}'
                                                   .format(task_id, e))
                             self._results[task_id] = f'Exception: {e}'
+                            raise
 
                     to_delete.add(task_id)
 
