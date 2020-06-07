@@ -39,28 +39,15 @@ class timer(object):
     def __call__(self, *args, **kwargs):
         import time
 
-        # Get local Globus endpoint ID, if one exists
-        GLOBUS_ID = None
-        globus_id_file = os.path.expanduser('~/.globusonline/lta/client-id.txt')
-        if os.path.exists(globus_id_file):
-            with open(globus_id_file) as fh:
-                GLOBUS_ID = fh.read().strip()
-
-        # Transfer files needed from Globus
-        base_dir = os.path.expanduser('~/.globus_funcx')
-        start = time.time()
+        # Ensure all required files exist on this endpoint
         for end, files in kwargs['_globus_files'].items():
-            if end == GLOBUS_ID:  # If this endpoint, ensure local files exist
-                for f in files:
-                    path = os.path.join(base_dir, f)
-                    if not os.path.exists(path):
-                        raise FileNotFoundError(path)
-            else:  # Get files from other Globus endpoints
-                # TODO: pull files from Globus
-                raise FileNotFoundError(files)
+            for f in files:
+                assert(f.startswith('~/.globus_funcx/'))
+                path = os.path.expanduser(f)
+                if not os.path.exists(path):
+                    raise FileNotFoundError(path)
 
         del kwargs['_globus_files']
-        transfer_time = time.time() - start
 
         # Run function and time execution
         start = time.time()
@@ -69,7 +56,6 @@ class timer(object):
 
         # Return result with execution times
         return {
-            'transfer_time': transfer_time,
             'runtime': runtime,
             'result': res
         }
@@ -97,7 +83,7 @@ class FuncXSmartClient(object):
         self.running = True
 
         # Start a thread to wait for results and record runtimes
-        self._watchdog_sleep_time = 0.01  # in seconds
+        self._watchdog_sleep_time = 0.1  # in seconds
         self._watchdog_thread = Thread(target=self._wait_for_results)
         self._watchdog_thread.start()
 
@@ -183,8 +169,6 @@ class FuncXSmartClient(object):
 
                     elif 'result' in status:
                         self._record_result(task_id, status['result'])
-                        print('Files:', status['result'])
-                        # print('Files:', status['result']['files_found'])
 
                     elif 'exception' in status:
                         e = status['exception']

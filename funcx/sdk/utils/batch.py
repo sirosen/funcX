@@ -1,3 +1,4 @@
+import os
 from collections import defaultdict
 
 from funcx.serialize import FuncXSerializer
@@ -35,7 +36,8 @@ class Batch:
         assert('_globus_files' not in kwargs)
         kwargs['_globus_files'] = defaultdict(list)
         for globus_id, file_name in files or []:
-            file_name = file_name.lstrip('~/.globus_funcx').lstrip('/')
+            if not file_name.startswith('~/.globus_funcx'):
+                file_name = os.path.join('~/.globus_funcx', file_name)
             kwargs['_globus_files'][globus_id].append(file_name)
 
         ser_args = self.fx_serializer.serialize(args)
