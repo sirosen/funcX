@@ -5,9 +5,8 @@ import uuid
 import logging
 from collections import defaultdict
 from threading import Thread
-# import multiprocessing as mp
+import multiprocessing as mp
 from queue import Queue, Empty
-
 
 try:
     from termcolor import colored
@@ -17,6 +16,8 @@ except ImportError:
 
 from parsl.app.errors import RemoteExceptionWrapper
 from funcx.sdk.client import FuncXClient
+from funcx.executors import LocalExecutor
+
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
@@ -62,8 +63,8 @@ class timer(object):
 
 
 class FuncXSmartClient(object):
-    def __init__(self, fxc=None, batch_status=True, log_level='DEBUG',
-                 *args, **kwargs):
+    def __init__(self, fxc=None, batch_status=True, local=False,
+                 last_n=3, log_level='DEBUG', *args, **kwargs):
 
         self._fxc = fxc or FuncXClient(*args, **kwargs)
         # Special Dill serialization so that wrapped methods work correctly
@@ -75,12 +76,31 @@ class FuncXSmartClient(object):
         self._completed_tasks = set()
         self._use_batch_status = batch_status
 
+        # Average times for tasks
+        self._last_n = last_n
+        self._exec_times = defaultdict(lambda: defaultdict(Queue))
+        self._avg_exec_time = defaultdict(lambda: defaultdict(float))
+        self._num_executions = defaultdict(lambda: defaultdict(int))
+
         # Set logging levels
         logger.setLevel(log_level)
         watchdog_logger.setLevel(log_level)
         self.execution_log = []
 
         self.running = True
+
+        # Start a process to do local execution
+        self.local = local
+        self._next_is_local = True
+        if self.local:
+            self._functions = {}
+            self._local_task_queue = mp.Queue()
+            self._local_result_queue = mp.Queue()
+            self._local_worker_process = mp.Process(
+                target=LocalExecutor, args=(self._local_task_queue,
+                                            self._local_result_queue,
+                                            log_level))
+            self._local_worker_process.start()
 
         # Start a thread to wait for results and record runtimes
         self._watchdog_sleep_time = 0.1  # in seconds
@@ -90,37 +110,104 @@ class FuncXSmartClient(object):
     def register_function(self, function, *args, **kwargs):
         wrapped_function = timer(function)
         func_id = self._fxc.register_function(wrapped_function, *args, **kwargs)
+        if self.local:
+            self._functions[func_id] = wrapped_function
         return func_id
 
     def run(self, *args, function_id, asynchronous=False, **kwargs):
-        endpoint_id = 'UNDECIDED'
-        task_id, endpoint_id = self._fxc.run(*args, function_id=function_id,
-                                             endpoint_id=endpoint_id,
-                                             asynchronous=asynchronous, **kwargs)
-        self._add_pending_task(*args, task_id=task_id,
-                               function_id=function_id,
-                               endpoint_id=endpoint_id, **kwargs)
+
+        if self._should_run_locally(self, *args, function_id=function_id,
+                                    **kwargs):
+            task_id, endpoint_id = self.run_locally(*args,
+                                                    function_id=function_id,
+                                                    **kwargs)
+
+        else:
+            endpoint_id = 'UNDECIDED'
+            task_id, endpoint_id = self._fxc.run(*args, function_id=function_id,
+                                                 endpoint_id=endpoint_id,
+                                                 asynchronous=asynchronous, **kwargs)
+
+            self._add_pending_task(*args, task_id=task_id,
+                                   function_id=function_id,
+                                   endpoint_id=endpoint_id, **kwargs)
 
         logger.debug('Sent function {} to endpoint {} with task_id {}'
                      .format(function_id, endpoint_id, task_id))
 
         return task_id
 
+    def run_locally(self, *args, function_id, **kwargs):
+        task_id = str(uuid.uuid4())
+        data = {
+            'function': self._functions[function_id],
+            'args': args,
+            'kwargs': dict(kwargs),
+            'task_id': task_id
+        }
+        # Must add to pending tasks before putting on queue, to prevent
+        # race condition when checking for results
+        self._add_pending_task(*args, task_id=task_id,
+                               function_id=function_id,
+                               endpoint_id='local', **kwargs)
+        self._local_task_queue.put(data)
+
+        return task_id
+
+    def _should_run_locally(self, *args, function_id, **kwargs):
+        if not self.local:
+            return False
+
+        elif len(self._avg_exec_time[function_id]) < 2:
+            ret = self._next_is_local
+            self._next_is_local = not self._next_is_local
+            return ret
+
+        else:
+            endpoint, _ = min(self._avg_exec_time[function_id].items(),
+                              key=lambda x: x[1])
+            return endpoint == 'local'
+
     def create_batch(self):
         return self._fxc.create_batch()
 
     def batch_run(self, batch):
-        logger.info('Running batch with {} tasks'.format(len(batch.tasks)))
-        pairs = self._fxc.batch_run(batch)
-        for (task_id, endpoint), task in zip(pairs, batch.tasks):
+        task_ids = []
+        remote_batch = self.create_batch()
+
+        # Select tasks which should be run locally
+        for task in batch.tasks:
+            if self._should_run_locally(*task['args'],
+                                        function_id=task['function'],
+                                        **task['kwargs']):
+                task_id = self.run_locally(*task['args'],
+                                           function_id=task['function'],
+                                           **task['kwargs'])
+
+                logger.debug('Sent function {} to endpoint {} with task_id {}'
+                             .format(task['function'], 'local', task_id))
+                task_ids.append(task_id)
+
+            else:
+                remote_batch.tasks.append(task)
+
+        if len(remote_batch.tasks) == 0:
+            return task_ids
+
+        # Run all other tasks remotely
+        logger.info('Running batch with {} tasks'
+                    .format(len(remote_batch.tasks)))
+        pairs = self._fxc.batch_run(remote_batch)
+        for (task_id, endpoint), task in zip(pairs, remote_batch.tasks):
             self._add_pending_task(*task['args'], task_id=task_id,
                                    function_id=task['function'],
                                    endpoint_id=endpoint, **task['kwargs'])
 
             logger.debug('Sent function {} to endpoint {} with task_id {}'
                          .format(task['function'], endpoint, task_id))
+            task_ids.append(task_id)
 
-        return [task_id for (task_id, endpoint) in pairs]
+        return task_ids
 
     def get_result(self, task_id, block=False):
         if task_id not in self._pending and task_id not in self._results:
@@ -145,6 +232,8 @@ class FuncXSmartClient(object):
     def stop(self):
         self.running = False
         self._watchdog_thread.join()
+        self._local_worker_process.terminate()
+        self._watchdog_thread.join()
 
     def _wait_for_results(self):
         '''Watchdog thread function'''
@@ -154,13 +243,29 @@ class FuncXSmartClient(object):
         while self.running:
             to_delete = set()
 
+            # Check if there are any local results ready
+            while self.local:
+                try:
+                    local_output = self._local_result_queue.get_nowait()
+                    print(local_output)
+                    res = local_output['result']
+                    task_id = local_output['task_id']
+                    self._record_result(task_id, res)
+                    to_delete.add(task_id)
+
+                except Empty:
+                    break
+
+            remote_tasks = [task_id for (task_id, info) in self._pending.items()
+                            if info['endpoint_id'] != 'local']
+
+            # Check if there are any remote results ready
             if self._use_batch_status:  # Query task statuses in a batch request
 
                 # Sleep, to prevent being throttled
                 time.sleep(self._watchdog_sleep_time)
 
-                task_ids = list(self._pending.keys())
-                batch_status = self._fxc.get_batch_status(task_ids)
+                batch_status = self._fxc.get_batch_status(remote_tasks)
 
                 for task_id, status in batch_status.items():
 
@@ -183,10 +288,8 @@ class FuncXSmartClient(object):
                     to_delete.add(task_id)
 
             else:   # Query task status one at a time
-                # Convert to list first because otherwise, the dict may throw an
-                # exception that its size has changed during iteration. This can
-                # happen when new pending tasks are added to the dict.
-                for task_id, info in list(self._pending.items()):
+
+                for task_id in remote_tasks:
 
                     # Sleep, to prevent being throttled
                     time.sleep(self._watchdog_sleep_time)
@@ -236,6 +339,18 @@ class FuncXSmartClient(object):
         info['exec_time'] = time_taken
         info['runtime'] = result['runtime']
         self.execution_log.append(info)
+
+        # Update runtimes
+        func = info['function_id']
+        end = info['endpoint_id']
+        if end != 'local':
+            end = 'remote'
+
+        while len(self._exec_times[func][end].queue) > self._last_n:
+            self._exec_times[func][end].get()
+        self._exec_times[func][end].put(time_taken)
+        self._avg_exec_time[func][end] = avg(self._exec_times[func][end])
+        self._num_executions[func][end] += 1
 
 
 ##############################################################################

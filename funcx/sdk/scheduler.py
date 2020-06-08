@@ -96,42 +96,20 @@ class FuncXScheduler:
         watchdog_logger.setLevel(log_level)
         self.execution_log = []
 
-        # Start a thread to do local execution
-        self.running = True
-        self._functions = {}
-        self._local_task_queue = mp.Queue()
-        self._local_result_queue = mp.Queue()
-        self._local_worker_process = mp.Process(target=LocalExecutor,
-                                                args=(self._local_task_queue,
-                                                      self._local_result_queue))
-        self._local_worker_process.start()
-
-        # Scheduling strategy
-        if strategy not in self.STRATEGIES:
-            raise ValueError("strategy must be one of {}"
-                             .format(self.STRATEGIES))
-        self.strategy = strategy
-        logger.info(f"Scheduler using strategy {strategy}")
-
-        # Set logging levels
-        logger.setLevel(log_level)
-        watchdog_logger.setLevel(log_level)
-        self.execution_log = []
-
-        # Start a thread to do local execution
-        self.running = True
-        self._functions = {}
-        self._local_task_queue = mp.Queue()
-        self._local_result_queue = mp.Queue()
-        self._local_worker_process = mp.Process(target=LocalExecutor,
-                                                args=(self._local_task_queue,
-                                                      self._local_result_queue))
-        self._local_worker_process.start()
-
         # Start a thread to wait for results and record runtimes
         self._watchdog_sleep_time = 0.01  # in seconds
         self._watchdog_thread = Thread(target=self._wait_for_results)
         self._watchdog_thread.start()
+
+        # Start a thread to do local execution
+        self.running = True
+        self._functions = {}
+        self._local_task_queue = mp.Queue()
+        self._local_result_queue = mp.Queue()
+        self._local_worker_process = mp.Process(target=LocalExecutor,
+                                                args=(self._local_task_queue,
+                                                      self._local_result_queue))
+        self._local_worker_process.start()
 
     def add_endpoint(self, endpoint_id):
         self._endpoints.append(endpoint_id)
@@ -450,8 +428,6 @@ class FuncXScheduler:
         self._num_executions[func][end] += 1
 
     def _run_locally(self, *args, function_id, backup_of=None, **kwargs):
-
-        task_id = str(uuid.uuid4())
 
         task_id = str(uuid.uuid4())
 
