@@ -22,13 +22,13 @@ from funcx.executors import LocalExecutor
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 ch = logging.StreamHandler()
-ch.setFormatter(logging.Formatter(colored("[SCHEDULER] %(message)s", 'yellow')))
+ch.setFormatter(logging.Formatter(colored("[CLIENT]   %(message)s", 'yellow')))
 logger.addHandler(ch)
 
 watchdog_logger = logging.getLogger(__name__ + '_watchdog')
 watchdog_logger.setLevel(logging.DEBUG)
 ch = logging.StreamHandler()
-ch.setFormatter(logging.Formatter(colored("[WATCHDOG]  %(message)s", 'green')))
+ch.setFormatter(logging.Formatter(colored("[WATCHDOG] %(message)s", 'green')))
 watchdog_logger.addHandler(ch)
 
 
@@ -212,6 +212,7 @@ class FuncXSmartClient(object):
 
     def get_result(self, task_id, block=False):
         if task_id not in self._pending and task_id not in self._results:
+            print('Pending:', self._pending.keys())
             raise ValueError('Unknown task id {}'.format(task_id))
 
         if block:
@@ -229,6 +230,17 @@ class FuncXSmartClient(object):
             raise Exception("Task result already returned")
         else:
             raise Exception("Task pending")
+
+    def block(self, function_id, endpoint_id):
+        path = f'block/{function_id}/{endpoint_id}'
+
+        r = self._fxc.get(path)
+        if r.http_status is not 200:
+            raise Exception(r)
+        elif r['status'] != 'Success':
+            raise ValueError('Failed with reason: {}'.format(r['reason']))
+        else:  # Successfully blocked
+            return
 
     def stop(self):
         self.running = False
