@@ -114,7 +114,7 @@ class FuncXSmartClient(object):
             self._functions[func_id] = wrapped_function
         return func_id
 
-    def run(self, *args, function_id, asynchronous=False, **kwargs):
+    def run(self, *args, function_id, files=None, asynchronous=False, **kwargs):
 
         if self._should_run_locally(self, *args, function_id=function_id,
                                     **kwargs):
@@ -124,9 +124,10 @@ class FuncXSmartClient(object):
 
         else:
             endpoint_id = 'UNDECIDED'
-            task_id, endpoint_id = self._fxc.run(*args, function_id=function_id,
-                                                 endpoint_id=endpoint_id,
-                                                 asynchronous=asynchronous, **kwargs)
+            batch = self.create_batch()
+            batch.add(*args, function_id=function_id, endpoint_id=endpoint_id,
+                      files=files, **kwargs)
+            task_id = self.batch_run(batch)[0]
 
             self._add_pending_task(*args, task_id=task_id,
                                    function_id=function_id,
@@ -232,8 +233,9 @@ class FuncXSmartClient(object):
     def stop(self):
         self.running = False
         self._watchdog_thread.join()
-        self._local_worker_process.terminate()
-        self._watchdog_thread.join()
+        if self.local:
+            self._local_worker_process.terminate()
+            self._local_worker_process.join()
 
     def _wait_for_results(self):
         '''Watchdog thread function'''
@@ -247,14 +249,21 @@ class FuncXSmartClient(object):
             while self.local:
                 try:
                     local_output = self._local_result_queue.get_nowait()
-                    print(local_output)
-                    res = local_output['result']
                     task_id = local_output['task_id']
+                    if 'exception' in local_output:
+                        res = local_output['exception']
+                    elif 'result' in local_output:
+                        res = local_output['result']
+                    else:
+                        logger.warn(f'Unexpected local worker result: {res}')
                     self._record_result(task_id, res)
                     to_delete.add(task_id)
 
                 except Empty:
                     break
+
+                except Exception as e:
+                    logger.error(f'Exception on task {task_id}: {e}')
 
             remote_tasks = [task_id for (task_id, info) in self._pending.items()
                             if info['endpoint_id'] != 'local']
