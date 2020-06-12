@@ -24,7 +24,8 @@ import importlib.machinery
 
 import funcx
 from funcx.executors.high_throughput import global_config, default_config
-from funcx.executors.high_throughput.interchange import Interchange
+#from funcx.executors.high_throughput.interchange import Interchange
+from funcx.executors.workqueue.interchange import Interchange
 from funcx.endpoint.list_endpoints import list_endpoints
 from funcx.sdk.client import FuncXClient
 from funcx.errors import *
