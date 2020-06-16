@@ -235,12 +235,23 @@ class FuncXSmartClient(object):
         path = f'block/{function_id}/{endpoint_id}'
 
         r = self._fxc.get(path)
-        if r.http_status is not 200:
+        if r.http_status != 200:
             raise Exception(r)
         elif r['status'] != 'Success':
             raise ValueError('Failed with reason: {}'.format(r['reason']))
         else:  # Successfully blocked
             return
+
+    def get_execution_log(self):
+        path = f'execution_log'
+        r = self._fxc.get(path)
+        if r.http_status != 200:
+            raise Exception(r)
+        else:
+            client_log = self.execution_log
+            scheduler_log = r['log']
+            self.execution_log = []
+            return {'client_log': client_log, 'scheduler_log': scheduler_log}
 
     def stop(self):
         self.running = False
