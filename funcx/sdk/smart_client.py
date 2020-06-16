@@ -42,7 +42,7 @@ class timer(object):
 
         # Ensure all required files exist on this endpoint
         for end, files in kwargs['_globus_files'].items():
-            for f in files:
+            for f, _ in files:
                 assert(f.startswith('~/.globus_funcx/'))
                 path = os.path.expanduser(f)
                 if not os.path.exists(path):

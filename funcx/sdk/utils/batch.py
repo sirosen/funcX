@@ -35,10 +35,10 @@ class Batch:
 
         assert('_globus_files' not in kwargs)
         kwargs['_globus_files'] = defaultdict(list)
-        for globus_id, file_name in files or []:
+        for globus_id, file_name, size in files or []:
             if not file_name.startswith('~/.globus_funcx'):
                 file_name = os.path.join('~/.globus_funcx', file_name)
-            kwargs['_globus_files'][globus_id].append(file_name)
+            kwargs['_globus_files'][globus_id].append((file_name, size))
 
         ser_args = self.fx_serializer.serialize(args)
         ser_kwargs = self.fx_serializer.serialize(kwargs)
