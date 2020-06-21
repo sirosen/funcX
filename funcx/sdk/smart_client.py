@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import uuid
+import dill
 import logging
 from collections import defaultdict
 from threading import Thread
@@ -38,6 +39,7 @@ class timer(object):
         self.__name__ = "timer"
 
     def __call__(self, *args, **kwargs):
+        import sys
         import time
 
         # Ensure all required files exist on this endpoint
@@ -58,7 +60,8 @@ class timer(object):
         # Return result with execution times
         return {
             'runtime': runtime,
-            'result': res
+            'result': res,
+            'imports': list(sys.modules.keys()),
         }
 
 
@@ -108,34 +111,25 @@ class FuncXSmartClient(object):
         self._watchdog_thread.start()
 
     def register_function(self, function, *args, **kwargs):
+        # Extract imports from function body
+        source = dill.source.getsource(function)
+        imports = []
+        for line in source.strip().split('\n'):
+            tokens = line.strip().split(' ')
+            if len(tokens) > 1 and tokens[0] == 'import':
+                imports.append(tokens[1])
+
         wrapped_function = timer(function)
-        func_id = self._fxc.register_function(wrapped_function, *args, **kwargs)
+        func_id = self._fxc.register_function(wrapped_function, *args,
+                                              **kwargs, imports=imports)
         if self.local:
             self._functions[func_id] = wrapped_function
         return func_id
 
     def run(self, *args, function_id, files=None, asynchronous=False, **kwargs):
-
-        if self._should_run_locally(self, *args, function_id=function_id,
-                                    **kwargs):
-            task_id, endpoint_id = self.run_locally(*args,
-                                                    function_id=function_id,
-                                                    **kwargs)
-
-        else:
-            endpoint_id = 'UNDECIDED'
-            batch = self.create_batch()
-            batch.add(*args, function_id=function_id, endpoint_id=endpoint_id,
-                      files=files, **kwargs)
-            task_id = self.batch_run(batch)[0]
-
-            self._add_pending_task(*args, task_id=task_id,
-                                   function_id=function_id,
-                                   endpoint_id=endpoint_id, **kwargs)
-
-        logger.debug('Sent function {} to endpoint {} with task_id {}'
-                     .format(function_id, endpoint_id, task_id))
-
+        batch = self.create_batch()
+        batch.add(*args, function_id=function_id, files=files, **kwargs)
+        task_id = self.batch_run(batch)[0]
         return task_id
 
     def run_locally(self, *args, function_id, **kwargs):
@@ -212,7 +206,6 @@ class FuncXSmartClient(object):
 
     def get_result(self, task_id, block=False):
         if task_id not in self._pending and task_id not in self._results:
-            print('Pending:', self._pending.keys())
             raise ValueError('Unknown task id {}'.format(task_id))
 
         if block:

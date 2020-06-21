@@ -443,8 +443,9 @@ class FuncXClient(throttling.ThrottledBaseClient):
         # Return the result
         return r.data
 
-    def register_function(self, function, function_name=None, container_uuid=None, description=None,
-                          public=False, group=None):
+    def register_function(self, function, function_name=None,
+                          container_uuid=None, description=None,
+                          public=False, group=None, imports=None):
         """Register a function code with the funcX service.
 
         Parameters
@@ -478,7 +479,8 @@ class FuncXClient(throttling.ThrottledBaseClient):
                 "entry_point": function_name if function_name else function.__name__,
                 "description": description,
                 "public": public,
-                "group": group}
+                "group": group,
+                "imports": imports}
 
         logger.info("Registering function : {}".format(data))
 
