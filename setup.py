@@ -35,6 +35,7 @@ setup(
                    'funcx-interchange=funcx.executors.high_throughput.interchange:cli_run',
                    'funcx-manager=funcx.executors.high_throughput.funcx_manager:cli_run',
                    'funcx-worker=funcx.executors.high_throughput.funcx_worker:cli_run',
+                   'create-redis=funcx.redis.create_redis:cli_run',
                   ]
     },
     author='funcX team',

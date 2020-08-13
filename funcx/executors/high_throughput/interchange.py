@@ -227,6 +227,16 @@ class Interchange(object):
         self.block_id_map = {}
         self.launch_cmd = launch_cmd
         self.last_core_hr_counter = 0
+
+        self.redis_cmd = None
+        if self.config.redisCluster:
+            self.redis_cmd = {}
+            self.redis_cmd['nodes'] = self.config.redisCluster.nodes
+            self.redis_cmd['replica'] = self.config.redisCluster.replica
+            self.redis_cmd['port'] = self.config.redisCluster.port
+            self.redis_cmd['command'] = self.config.redisCluster.redis_cmd
+        logger.info("Redis info: {}".format(self.redis_cmd))
+
         if not launch_cmd:
             self.launch_cmd = ("funcx-manager {debug} {max_workers} "
                                "-c {cores_per_worker} "
@@ -256,7 +266,6 @@ class Interchange(object):
         except Exception as e:
             logger.exception("Caught exception")
             raise
-
 
     def load_config(self):
         """ Load the config
@@ -759,7 +768,7 @@ class Interchange(object):
                 else:
                     launch_cmd = self.launch_cmd.format(block_id=external_block_id, worker_type=task_type)
                 if not task_type:
-                    internal_block = self.config.provider.submit(launch_cmd, 1)
+                    internal_block = self.config.provider.submit(launch_cmd, 1, redis=self.redis_cmd)
                 else:
                     internal_block = self.config.provider.submit(launch_cmd, 1, task_type)
                 logger.debug("Launched block {}->{}".format(external_block_id, internal_block))
