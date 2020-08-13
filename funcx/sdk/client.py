@@ -2,10 +2,21 @@ import json
 import os
 import logging
 import pickle as pkl
+from inspect import getsource
+from urllib.parse import urljoin
+
+
+from globus_sdk import AuthClient
+
+import requests
 
 from parsl.app.errors import RemoteExceptionWrapper
 
 from fair_research_login import NativeClient, JSONTokenStorage
+
+from funcx.sdk.search import SearchHelper, FunctionSearchResults
+from funcx import VERSION
+
 from funcx.serialize import FuncXSerializer
 # from funcx.sdk.utils.futures import FuncXFuture
 from funcx.sdk.utils import throttling
@@ -13,6 +24,7 @@ from funcx.sdk.utils.batch import Batch
 from funcx.errors import MalformedResponse
 
 logger = logging.getLogger(__name__)
+
 
 class FuncXClient(throttling.ThrottledBaseClient):
     """Main class for interacting with the funcX service
@@ -25,7 +37,7 @@ class FuncXClient(throttling.ThrottledBaseClient):
     CLIENT_ID = '4cf29807-cf21-49ec-9443-ff9a3fb9f81c'
 
     def __init__(self, http_timeout=None, funcx_home=os.path.join('~', '.funcx'),
-                 force_login=False, fx_authorizer=None, funcx_service_address='https://dev.funcx.org/api/v1',
+                 force_login=False, fx_authorizer=None, funcx_service_address='https://dev.api.funcx.org/v1',
                  **kwargs):
         """ Initialize the client
 
@@ -60,17 +72,24 @@ class FuncXClient(throttling.ThrottledBaseClient):
                                           app_name="FuncX SDK",
                                           token_storage=JSONTokenStorage(tokens_filename))
 
+        # TODO: if fx_authorizer is given, we still need to get an authorizer for Search
         fx_scope = "https://auth.globus.org/scopes/facd7ccc-c5f4-42aa-916b-a0e270e2c2a9/all"
+        search_scope = "urn:globus:auth:scope:search.api.globus.org:all"
+        scopes = [fx_scope, search_scope, "openid"]
+
+        search_authorizer = None
 
         if not fx_authorizer:
-            self.native_client.login(requested_scopes=[fx_scope],
+            self.native_client.login(requested_scopes=scopes,
                                      no_local_server=kwargs.get("no_local_server", True),
                                      no_browser=kwargs.get("no_browser", True),
                                      refresh_tokens=kwargs.get("refresh_tokens", True),
                                      force=force_login)
 
-            all_authorizers = self.native_client.get_authorizers_by_scope(requested_scopes=[fx_scope])
+            all_authorizers = self.native_client.get_authorizers_by_scope(requested_scopes=scopes)
             fx_authorizer = all_authorizers[fx_scope]
+            search_authorizer = all_authorizers[search_scope]
+            openid_authorizer = all_authorizers["openid"]
 
         super(FuncXClient, self).__init__("funcX",
                                           environment='funcx',
@@ -80,11 +99,27 @@ class FuncXClient(throttling.ThrottledBaseClient):
                                           **kwargs)
         self.fx_serializer = FuncXSerializer()
 
+        authclient = AuthClient(authorizer=openid_authorizer)
+        user_info = authclient.oauth2_userinfo()
+        self.searcher = SearchHelper(authorizer=search_authorizer, owner_uuid=user_info['sub'])
+        self.funcx_service_address = funcx_service_address
+
+    def version_check(self):
+        """Check this client version meets the service's minimum supported version.
+        """
+        resp = self.get("version", params={"service": "all"})
+        versions = resp.data
+        if "min_ep_version" not in versions:
+            raise Exception("Failed to retrieve version information from funcX service.")
+        min_ep_version = versions['min_ep_version']
+        if VERSION < min_ep_version:
+            raise Exception(f"Your endpoint is out of date.  Your version={VERSION} is lower than the minimum version "
+                            f"for an endpoint: {min_ep_version}.  Please update.")
+
     def logout(self):
         """Remove credentials from your local system
         """
         self.native_client.logout()
-
 
     def update_table(self, return_msg, task_id):
         """ Parses the return message from the service and updates the internal func_tables
@@ -126,8 +161,8 @@ class FuncXClient(throttling.ThrottledBaseClient):
                 self.func_table[task_id] = status
         return status
 
-    def get_task_status(self, task_id):
-        """Get the status of a funcX task.
+    def get_task(self, task_id):
+        """Get a funcX task.
 
         Parameters
         ----------
@@ -137,12 +172,12 @@ class FuncXClient(throttling.ThrottledBaseClient):
         Returns
         -------
         dict
-            Status block containing "status" key.
+            Task block containing "status" key.
         """
         if task_id in self.func_table:
-             return self.func_table[task_id]
+            return self.func_table[task_id]
 
-        r = self.get("{task_id}/status".format(task_id=task_id))
+        r = self.get("tasks/{task_id}".format(task_id=task_id))
         logger.debug("Response string : {}".format(r))
         try:
             rets = self.update_table(r.text, task_id)
@@ -166,21 +201,20 @@ class FuncXClient(throttling.ThrottledBaseClient):
         ------
         Exception obj: Exception due to which the task failed
         """
-        status = self.get_task_status(task_id)
-        if status['pending'] is True:
+        task = self.get_task(task_id)
+        if task['pending'] is True:
             raise Exception("Task pending")
         else:
-            if 'result' in status:
-                return status['result']
+            if 'result' in task:
+                return task['result']
             else:
-                logger.warn("We have an exception : {}".format(status['exception']))
-                status['exception'].reraise()
+                logger.warning("We have an exception : {}".format(task['exception']))
+                task['exception'].reraise()
 
     def get_batch_status(self, task_id_list):
         """ Request status for a batch of task_ids
         """
         assert isinstance(task_id_list, list), "get_batch_status expects a list of task ids"
-
 
         pending_task_ids = [t for t in task_id_list if t not in self.func_table]
 
@@ -341,8 +375,7 @@ class FuncXClient(throttling.ThrottledBaseClient):
 
         return r['task_uuids']
 
-
-    def register_endpoint(self, name, endpoint_uuid, description=None):
+    def register_endpoint(self, name, endpoint_uuid, metadata=None):
         """Register an endpoint with the funcX service.
 
         Parameters
@@ -351,8 +384,8 @@ class FuncXClient(throttling.ThrottledBaseClient):
             Name of the endpoint
         endpoint_uuid : str
                 The uuid of the endpoint
-        description : str
-            Description of the endpoint
+        metadata : dict
+            endpoint metadata, see default_config example
 
         Returns
         -------
@@ -361,7 +394,15 @@ class FuncXClient(throttling.ThrottledBaseClient):
              'address' : <>,
              'client_ports': <>}
         """
-        data = {"endpoint_name": name, "endpoint_uuid": endpoint_uuid, "description": description}
+        self.version_check()
+
+        data = {
+            "endpoint_name": name,
+            "endpoint_uuid": endpoint_uuid,
+            "version": VERSION
+        }
+        if metadata:
+            data['meta'] = metadata
 
         r = self.post(self.ep_registration_path, json_body=data)
         if r.http_status is not 200:
@@ -443,7 +484,7 @@ class FuncXClient(throttling.ThrottledBaseClient):
         return r.data
 
     def register_function(self, function, function_name=None, container_uuid=None, description=None,
-                          public=False, group=None):
+                          public=False, group=None, searchable=True):
         """Register a function code with the funcX service.
 
         Parameters
@@ -460,6 +501,8 @@ class FuncXClient(throttling.ThrottledBaseClient):
             Whether or not the function is publicly accessible. Default = False
         group : str
             A globus group uuid to share this function with
+        searchable : bool
+            If true, the function will be indexed into globus search with the appropriate permissions
 
         Returns
         -------
@@ -468,16 +511,24 @@ class FuncXClient(throttling.ThrottledBaseClient):
         """
         registration_path = 'register_function'
 
+        source_code = ""
+        try:
+            source_code = getsource(function)
+        except OSError:
+            logger.error("Failed to find source code during function registration.")
+
         serialized_fn = self.fx_serializer.serialize(function)
         packed_code = self.fx_serializer.pack_buffers([serialized_fn])
 
         data = {"function_name": function.__name__,
                 "function_code": packed_code,
+                "function_source": source_code,
                 "container_uuid": container_uuid,
                 "entry_point": function_name if function_name else function.__name__,
                 "description": description,
                 "public": public,
-                "group": group}
+                "group": group,
+                "searchable": searchable}
 
         logger.info("Registering function : {}".format(data))
 
@@ -485,8 +536,50 @@ class FuncXClient(throttling.ThrottledBaseClient):
         if r.http_status is not 200:
             raise Exception(r)
 
+        func_uuid = r.data['function_uuid']
+
         # Return the result
-        return r.data['function_uuid']
+        return func_uuid
+
+    def update_function(self, func_uuid, function):
+        pass
+
+    def search_function(self, q, offset=0, limit=10, advanced=False):
+        """Search for function via the funcX service
+
+        Parameters
+        ----------
+        q : str
+            free-form query string
+        offset : int
+            offset into total results
+        limit : int
+            max number of results to return
+        advanced : bool
+            allows elastic-search like syntax in query string
+
+        Returns
+        -------
+        FunctionSearchResults
+        """
+        return self.searcher.search_function(q, offset=offset, limit=limit, advanced=advanced)
+
+    def search_endpoint(self, q, scope='all', owner_id=None):
+        """
+
+        Parameters
+        ----------
+        q
+        scope : str
+            Can be one of {'all', 'my-endpoints', 'shared-with-me'}
+        owner_id
+            should be urn like f"urn:globus:auth:identity:{owner_uuid}"
+
+        Returns
+        -------
+
+        """
+        return self.searcher.search_endpoint(q, scope=scope, owner_id=owner_id)
 
     def register_container(self, location, container_type, name='', description=''):
         """Register a container with the funcX service.
