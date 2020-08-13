@@ -48,6 +48,7 @@ class Config(RepresentationMixin):
                  # Scaling mechanics
                  provider=LocalProvider(),
                  scaling_enabled=True,
+                 redisCluster=None,
                  # Connection info
                  worker_ports=None,
                  worker_port_range=(54000, 55000),
@@ -72,6 +73,7 @@ class Config(RepresentationMixin):
         # Scaling mechanics
         self.provider = provider
         self.scaling_enabled = scaling_enabled
+        self.redisCluster = redisCluster
 
         # Connection info
         self.worker_ports = worker_ports
