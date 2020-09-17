@@ -25,6 +25,7 @@ def naive_interchange_task_dispatch(interesting_managers,
     elif scheduler_mode == 'soft':
         task_dispatch, dispatched_tasks = {}, 0
         for loop in ['first', 'second']:
+        # for loop in ['second']:
             task_dispatch, dispatched_tasks = dispatch(interesting_managers,
                                                        pending_task_queue,
                                                        ready_manager_queue,
@@ -72,7 +73,9 @@ def dispatch(interesting_managers,
                         ready_manager_queue[manager]['tasks'][task_type].update(tids[task_type])
                     logger.debug("[MAIN] The tasks on manager {} is {}".format(manager, ready_manager_queue[manager]['tasks']))
                     ready_manager_queue[manager]['total_tasks'] += len(tasks)
-                    task_dispatch[manager] = tasks
+                    if manager not in task_dispatch:
+                        task_dispatch[manager] = []
+                    task_dispatch[manager] += tasks
                     dispatched_tasks += len(tasks)
                     logger.debug("[MAIN] Assigned tasks {} to manager {}".format(tids, manager))
                 if ready_manager_queue[manager]['free_capacity']['total_workers'] > 0:
