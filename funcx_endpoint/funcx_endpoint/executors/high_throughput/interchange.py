@@ -338,6 +338,7 @@ class Interchange(object):
         poller = zmq.Poller()
         poller.register(self.task_incoming, zmq.POLLIN)
 
+        
         while not kill_event.is_set():
             # Check when the last heartbeat was.
             # logger.debug(f"[TASK_PULL_THREAD] Last heartbeat: {self.last_heartbeat}")

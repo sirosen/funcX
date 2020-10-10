@@ -303,6 +303,7 @@ class Manager(object):
             # Spin up any new workers according to the worker queue.
             # Returns the total number of containers that have spun up.
             self.worker_procs.update(self.worker_map.spin_up_workers(self.next_worker_q,
+								     mode=self.worker_mode, 
                                                                      debug=self.debug,
                                                                      address=self.address,
                                                                      uid=self.uid,
@@ -555,6 +556,7 @@ def cli_run():
     try:
         global logger
         logger = set_file_logger('{}/{}/manager.log'.format(args.logdir, args.uid),
+				 name='funcx_endpoint',
                                  level=logging.DEBUG if args.debug is True else logging.INFO)
 
         logger.info("Python version: {}".format(sys.version))
