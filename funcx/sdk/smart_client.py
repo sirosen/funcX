@@ -52,6 +52,9 @@ class timer(object):
 
         del kwargs['_globus_files']
 
+        # TODO: import modules manually before running function so that
+        # import time is not counted in the measured runtime
+
         # Run function and time execution
         start = time.time()
         res = self.func(*args, **kwargs)
@@ -65,7 +68,7 @@ class timer(object):
         }
 
 
-class FuncXSmartClient(object):
+class DeltaClient(object):
     def __init__(self, fxc=None, batch_status=True, local=False,
                  last_n=3, log_level='DEBUG', *args, **kwargs):
 
@@ -116,6 +119,8 @@ class FuncXSmartClient(object):
         imports = []
         for line in source.strip().split('\n'):
             tokens = line.strip().split(' ')
+            # TODO: be smarter about detecting imports, for example,
+            # imports of the form `from x import y` and `import x, y`
             if len(tokens) > 1 and tokens[0] == 'import':
                 imports.append(tokens[1])
 
