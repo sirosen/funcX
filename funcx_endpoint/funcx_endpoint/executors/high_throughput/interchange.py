@@ -390,7 +390,7 @@ class Interchange(object):
             elif isinstance(msg, Heartbeat):
                 logger.debug("Got heartbeat")
             else:
-                logger.info("[TASK_PULL_THREAD] Received task:{}".format(msg))
+                logger.info("[TASK_PULL_THREAD] Received task:{}".format(msg['task_id']))
                 task_type = self.get_container(msg['task_id'].split(";")[1])
                 msg['container'] = task_type
                 if task_type not in self.pending_task_queue:
@@ -679,7 +679,7 @@ class Interchange(object):
             for manager in task_dispatch:
                 tasks = task_dispatch[manager]
                 if tasks:
-                    logger.info("[MAIN] Sending task message {} to manager {}".format(tasks, manager))
+                    logger.info("[MAIN] Sending {} task messages to manager {}".format(len(tasks), manager))
                     self.task_outgoing.send_multipart([manager, b'', pickle.dumps(tasks)])
                     for task in tasks:
                         task_id = task["task_id"]
