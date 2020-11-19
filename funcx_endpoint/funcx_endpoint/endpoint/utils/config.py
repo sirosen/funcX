@@ -43,6 +43,21 @@ class Config(RepresentationMixin):
         Allow Interchange to manage resource provisioning. If set to False, interchange
         will not do any scaling.
         Default: True
+
+    stdout : str
+        Path where the endpoint's stdout should be written
+        Default: ./interchange.stdout
+
+    stderr : str
+        Path where the endpoint's stderr should be written
+        Default: ./interchange.stderr
+
+    detach_endpoint : Bool
+        Should the endpoint deamon be run as a detached process? This is good for
+        a real edge node, but an anti-pattern for kubernetes pods
+        Default: True
+
+
     """
 
     def __init__(self,
@@ -68,8 +83,14 @@ class Config(RepresentationMixin):
                  heartbeat_threshold=120,
                  poll_period=10,
                  # Logging info
+                 log_max_bytes=256 * 1024 * 1024,  # in bytes
+                 log_backup_count=1,
                  working_dir=None,
-                 worker_debug=False):
+                 worker_debug=False,
+                 stdout="./interchange.stdout",
+                 stderr="./interchange.stderr",
+                 detach_endpoint=True,
+                 interchange_file_logger=True):
         # Scaling mechanics
         self.provider = provider
         self.scaling_enabled = scaling_enabled
@@ -96,5 +117,13 @@ class Config(RepresentationMixin):
         self.poll_period = poll_period
 
         # Logging info
+        self.log_max_bytes = log_max_bytes
+        self.log_backup_count = log_backup_count
         self.working_dir = working_dir
         self.worker_debug = worker_debug
+        self.stdout = stdout
+        self.stderr = stderr
+        self.interchange_file_logger = interchange_file_logger
+
+        # Endpoint behavior
+        self.detach_endpoint = detach_endpoint
