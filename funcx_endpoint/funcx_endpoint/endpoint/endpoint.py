@@ -18,6 +18,7 @@ import psutil
 import requests
 import texttable as tt
 import typer
+from retry import retry
 
 import funcx
 from funcx.utils.errors import *
@@ -248,7 +249,6 @@ def start_endpoint(
                                        os.path.join(endpoint_dir, FUNCX_CONFIG_FILE_NAME)).load_module()
 
     funcx_client = FuncXClient(funcx_service_address=endpoint_config.config.funcx_service_address)
-    print(funcx_client)
 
     # If pervious registration info exists, use that
     if os.path.exists(endpoint_json):
@@ -262,16 +262,25 @@ def start_endpoint(
     logger.info(f"Starting endpoint with uuid: {endpoint_uuid}")
 
     # Create a daemon context
-    stdout = open(os.path.join(endpoint_dir, './interchange.stdout'), 'w+')
-    stderr = open(os.path.join(endpoint_dir, './interchange.stderr'), 'w+')
+    # If we are running a full detached daemon then we will send the output to
+    # log files, otherwise we can piggy back on our stdout
+    if endpoint_config.config.detach_endpoint:
+        stdout = open(os.path.join(endpoint_dir, endpoint_config.config.stdout), 'w+')
+        stderr = open(os.path.join(endpoint_dir, endpoint_config.config.stderr), 'w+')
+    else:
+        stdout = sys.stdout
+        stderr = sys.stderr
+
     try:
         context = daemon.DaemonContext(working_directory=endpoint_dir,
                                        umask=0o002,
                                        # lockfile.FileLock(
-                                       pidfile=daemon.pidfile.PIDLockFile(os.path.join(endpoint_dir,
-                                                                                       'daemon.pid')),
+                                       pidfile=daemon.pidfile.PIDLockFile(
+                                           os.path.join(endpoint_dir,
+                                                        'daemon.pid')),
                                        stdout=stdout,
                                        stderr=stderr,
+                                       detach_process=endpoint_config.config.detach_endpoint
                                        )
     except Exception as e:
         logger.critical("Caught exception while trying to setup endpoint context dirs")
@@ -287,7 +296,7 @@ def start_endpoint(
     with context:
         while True:
             # Register the endpoint
-            logger.debug("Registering endpoint")
+            logger.info("Registering endpoint")
             if State.FUNCX_CONFIG.get('broker_test', False) is True:
                 logger.warning("**************** BROKER State.DEBUG MODE *******************")
                 reg_info = register_with_hub(endpoint_uuid,
@@ -295,12 +304,7 @@ def start_endpoint(
                                              State.FUNCX_CONFIG['broker_address'],
                                              State.FUNCX_CONFIG['redis_host'])
             else:
-                metadata = None
-                try:
-                    metadata = endpoint_config.meta
-                except AttributeError:
-                    logger.info("Did not find associated endpoint metadata")
-                reg_info = register_endpoint(funcx_client, name, endpoint_uuid, metadata, endpoint_dir)
+                reg_info = register_endpoint(funcx_client, name, endpoint_uuid, endpoint_dir)
 
             logger.info("Endpoint registered with UUID: {}".format(reg_info['endpoint_id']))
 
@@ -323,13 +327,10 @@ def start_endpoint(
             logger.critical("Interchange terminated.")
             time.sleep(10)
 
-    stdout.close()
-    stderr.close()
 
-    logger.critical(f"Shutting down endpoint {endpoint_uuid}")
-
-
-def register_endpoint(funcx_client, endpoint_name, endpoint_uuid, metadata, endpoint_dir):
+# Avoid a race condition when starting the endpoint alongside the web service
+@retry(delay=5, logger=logging.getLogger('funcx'))
+def register_endpoint(funcx_client, endpoint_name, endpoint_uuid, endpoint_dir):
     """Register the endpoint and return the registration info.
 
     Parameters
