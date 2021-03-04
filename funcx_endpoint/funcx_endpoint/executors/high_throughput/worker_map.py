@@ -217,7 +217,7 @@ class WorkerMap(object):
             # Theta
             # modded_cmd = f'singularity exec -H /home/skluzacek/ -H /project2/chard/skluzacek/ /home/skluzacek/{container_uri} {cmd}' 
             # Midway2
-            modded_cmd = f'singularity exec -H /home/tskluzac --bind /projects/CSC249ADCD01/skluzacek:/projects/CSC249ADCD01/skluzacek {container_uri} {cmd}' 
+            modded_cmd = f'singularity exec -H /home/tskluzac {container_uri} {cmd}'
             # modded_cmd = f'singularity exec -H /home/tskluzac /home/tskluzac/{container_uri} {cmd}' 
             # modded_cmd = f'singularity exec -H ' # TODO: COME BACK
             logger.info("Command string with singularity:\n {}".format(modded_cmd))
