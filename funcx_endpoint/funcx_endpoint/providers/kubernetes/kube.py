@@ -272,7 +272,7 @@ class KubernetesProvider(ExecutionProvider, RepresentationMixin):
         # Create the enviornment variables and command to initiate IPP
         environment_vars = client.V1EnvVar(name="TEST", value="SOME DATA")
 
-        launch_args = ["/bin/bash", "-c", "{0}".format(cmd_string)]
+        launch_args = ["-c", "{0}".format(cmd_string)]
 
         volume_mounts = []
         # Create mount paths for the volumes
@@ -291,7 +291,7 @@ class KubernetesProvider(ExecutionProvider, RepresentationMixin):
             resources=resources,
             ports=[client.V1ContainerPort(container_port=port)],
             volume_mounts=volume_mounts,
-            # command=['/bin/bash'],
+            command=['/bin/bash'],
             args=launch_args,
             env=[environment_vars],
             security_context=security_context)
