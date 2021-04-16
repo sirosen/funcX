@@ -337,7 +337,7 @@ class Manager(object):
 
                     for task in tasks:
                         # Set default type to raw
-                        task_type = task.container_id
+                        task_type = task.local_container
 
                         logger.debug("[TASK DEBUG] Task is of type: {}".format(task_type))
 
