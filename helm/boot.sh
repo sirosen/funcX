@@ -13,7 +13,7 @@ fi
 
 while pgrep funcx-endpoint >/dev/null;
     do
-        echo "funcx-endpoint process is still alive. Next check in 600s."
-        sleep 600;
+        echo "funcx-endpoint process is still alive. Next check in 60s."
+        sleep 60;
     done
 echo "funcx-endpoint process exited. Restarting endpoint"
