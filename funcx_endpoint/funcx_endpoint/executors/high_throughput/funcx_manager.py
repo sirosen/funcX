@@ -500,20 +500,26 @@ class Manager(object):
         """
 
         if self.worker_type and self.scheduler_mode == 'hard':
-            logger.debug("[MANAGER] Start an initial worker with worker type {}".format(self.worker_type))
-            self.worker_procs.update(self.worker_map.add_worker(worker_id=str(self.worker_map.worker_id_counter),
-                                                                worker_type=self.worker_type,
-                                                                address=self.address,
-                                                                debug=self.debug,
-                                                                uid=self.uid,
-                                                                logdir=self.logdir,
-                                                                worker_port=self.worker_port))
+            self.add_worker()
 
         logger.debug("Initial workers launched")
         self._result_pusher_thread.start()
         self._status_report_thread.start()
         self.pull_tasks(self._kill_event)
         logger.info("Waiting")
+
+    def add_worker(self):
+        logger.debug("[MANAGER] Start an initial worker with worker type {}".format(self.worker_type))
+        self.worker_procs.update(self.worker_map.add_worker(worker_id=str(self.worker_map.worker_id_counter),
+                                                            worker_type=self.worker_type,
+                                                            address=self.address,
+                                                            debug=self.debug,
+                                                            uid=self.uid,
+                                                            logdir=self.logdir,
+                                                            worker_port=self.worker_port))
+        w_id, m_type, message = self.funcx_task_socket.recv_multipart()
+        reg_info = pickle.loads(message)
+        self.worker_map.register_worker(w_id, reg_info['worker_type'])
 
 
 def cli_run():
