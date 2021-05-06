@@ -195,6 +195,10 @@ class Manager(object):
             args=(self._kill_event,)
         )
 
+        self.poller = zmq.Poller()
+        self.poller.register(self.task_incoming, zmq.POLLIN)
+        self.poller.register(self.funcx_task_socket, zmq.POLLIN)
+
     def create_reg_message(self):
         """ Creates a registration message to identify the worker to the interchange
         """
@@ -234,9 +238,6 @@ class Manager(object):
               Event to let the thread know when it is time to die.
         """
         logger.info("[TASK PULL THREAD] starting")
-        poller = zmq.Poller()
-        poller.register(self.task_incoming, zmq.POLLIN)
-        poller.register(self.funcx_task_socket, zmq.POLLIN)
 
         # Send a registration message
         msg = self.create_reg_message()
@@ -263,7 +264,7 @@ class Manager(object):
                 self.task_incoming.send(msg)
 
             # Receive results from the workers, if any
-            socks = dict(poller.poll(timeout=poll_timer))
+            socks = dict(self.poller.poll(timeout=poll_timer))
             if self.funcx_task_socket in socks and socks[self.funcx_task_socket] == zmq.POLLIN:
                 try:
                     w_id, m_type, message = self.funcx_task_socket.recv_multipart()
