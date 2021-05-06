@@ -268,12 +268,7 @@ class Manager(object):
             if self.funcx_task_socket in socks and socks[self.funcx_task_socket] == zmq.POLLIN:
                 try:
                     w_id, m_type, message = self.funcx_task_socket.recv_multipart()
-                    if m_type == b'REGISTER':
-                        reg_info = pickle.loads(message)
-                        logger.debug("Registration received from worker:{} {}".format(w_id, reg_info))
-                        self.worker_map.register_worker(w_id, reg_info['worker_type'])
-
-                    elif m_type == b'TASK_RET':
+                    if m_type == b'TASK_RET':
                         logger.debug("Result received from worker: {}".format(w_id))
                         logger.debug("[TASK_PULL_THREAD] Got result: {}".format(message))
                         self.pending_result_queue.put(message)
@@ -305,13 +300,7 @@ class Manager(object):
 
             # Spin up any new workers according to the worker queue.
             # Returns the total number of containers that have spun up.
-            self.worker_procs.update(self.worker_map.spin_up_workers(self.next_worker_q,
-                                                                     debug=self.debug,
-                                                                     address=self.address,
-                                                                     uid=self.uid,
-                                                                     logdir=self.logdir,
-                                                                     worker_port=self.worker_port))
-            logger.debug(f"[SPIN UP] Worker processes: {self.worker_procs}")
+            self.spin_up_workers()
 
             # Receive task batches from Interchange and forward to workers
             if self.task_incoming in socks and socks[self.task_incoming] == zmq.POLLIN:
@@ -508,6 +497,16 @@ class Manager(object):
         self.pull_tasks(self._kill_event)
         logger.info("Waiting")
 
+    def register_worker(self):
+        w_id, m_type, message = self.funcx_task_socket.recv_multipart()
+        if m_type != b'REGISTER':
+            errmsg = f'Expected REGISTER from {w_id}, but received {m_type}: {message}'
+            logger.exception(errmsg)
+            raise Exception(errmsg)
+        reg_info = pickle.loads(message)
+        logger.debug("Registration received from worker:{} {}".format(w_id, reg_info))
+        self.worker_map.register_worker(w_id, reg_info['worker_type'])
+
     def add_worker(self):
         logger.debug("[MANAGER] Start an initial worker with worker type {}".format(self.worker_type))
         self.worker_procs.update(self.worker_map.add_worker(worker_id=str(self.worker_map.worker_id_counter),
@@ -517,9 +516,20 @@ class Manager(object):
                                                             uid=self.uid,
                                                             logdir=self.logdir,
                                                             worker_port=self.worker_port))
-        w_id, m_type, message = self.funcx_task_socket.recv_multipart()
-        reg_info = pickle.loads(message)
-        self.worker_map.register_worker(w_id, reg_info['worker_type'])
+        self.register_worker()
+
+    def spin_up_workers(self):
+        spin_ups = self.worker_map.spin_up_workers(self.next_worker_q,
+                                                   debug=self.debug,
+                                                   address=self.address,
+                                                   uid=self.uid,
+                                                   logdir=self.logdir,
+                                                   worker_port=self.worker_port)
+        self.worker_procs.update(spin_ups)
+        for _ in range(len(spin_ups)):
+            self.register_worker()
+
+        logger.debug(f"[SPIN UP] Worker processes: {self.worker_procs}")
 
 
 def cli_run():
