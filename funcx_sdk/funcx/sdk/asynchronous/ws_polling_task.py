@@ -4,11 +4,12 @@ import logging
 from asyncio import AbstractEventLoop, QueueEmpty
 import dill
 import websockets
+import threading
 from websockets.exceptions import InvalidHandshake
 
 from funcx.sdk.asynchronous.funcx_task import FuncXTask
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("asyncio")
 
 
 class WebSocketPollingTask:
@@ -19,6 +20,7 @@ class WebSocketPollingTask:
                  loop: AbstractEventLoop,
                  init_task_group_id: str = None,
                  results_ws_uri: str = 'ws://localhost:6000',
+                 dead_event=None,
                  auto_start: bool = True):
         """
         Parameters
@@ -53,6 +55,7 @@ class WebSocketPollingTask:
         self.running_task_group_ids.add(self.init_task_group_id)
         self.task_group_ids_queue = asyncio.Queue()
         self.pending_tasks = {}
+        self.dead_event = dead_event if dead_event else threading.Event()
 
         self.ws = None
         self.closed = False
@@ -83,9 +86,11 @@ class WebSocketPollingTask:
 
     async def handle_incoming(self, pending_futures, auto_close=False):
         while True:
+            # logger.warning("[WS_POLLING_T] Waiting for data")
             raw_data = await self.ws.recv()
             data = json.loads(raw_data)
             task_id = data['task_id']
+            # logger.warning(f"[WS_POLLING_T] Received task: {task_id}")
             if task_id in pending_futures:
                 future = pending_futures[task_id]
                 del pending_futures[task_id]
@@ -100,7 +105,10 @@ class WebSocketPollingTask:
                 except Exception as e:
                     print("Caught exception : ", e)
 
+                # logger.warning("WS_POLLING_TASK] pending futures: {len(pending_futures)}")
                 if auto_close and len(pending_futures) == 0:
+                    self.dead_event.set()
+                    # logger.warning("[WS_POLLING_TASK] setting dead event")
                     await self.ws.close()
                     self.ws = None
                     self.closed = True

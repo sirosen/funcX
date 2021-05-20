@@ -16,7 +16,7 @@ import atexit
 
 from funcx.sdk.asynchronous.ws_polling_task import WebSocketPollingTask
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("asyncio")
 
 
 class FuncXExecutor(concurrent.futures.Executor):
@@ -49,7 +49,10 @@ class FuncXExecutor(concurrent.futures.Executor):
         self._function_future_map = {}
         self.task_group_id = self.funcx_client.session_task_group_id  # we need to associate all batch launches with this id
 
-        self.poller_thread = None
+        self.result_poller = ResultPoller(self.funcx_client,
+                                          self._function_future_map,
+                                          self.results_ws_uri,
+                                          self.task_group_id)
         atexit.register(self.shutdown)
 
     def submit(self, function, *args, endpoint_id=None, container_uuid=None, **kwargs):
@@ -102,18 +105,17 @@ class FuncXExecutor(concurrent.futures.Executor):
 
         res = self._function_future_map[task_uuid]
 
-        if not self.poller_thread or self.poller_thread.ws_handler.closed:
-            self.poller_thread = ExecutorPollerThread(self.funcx_client, self._function_future_map, self.results_ws_uri, self.task_group_id)
+        self.result_poller.start()
         return res
 
     def shutdown(self):
-        if self.poller_thread:
-            self.poller_thread.shutdown()
+        if self.result_poller:
+            self.result_poller.shutdown()
         logger.debug(f"Executor:{self.label} shutting down")
 
 
-class ExecutorPollerThread():
-    """ An executor
+class ResultPoller():
+    """ Handles all result polling
     """
 
     def __init__(self, funcx_client, _function_future_map, results_ws_uri, task_group_id):
@@ -132,8 +134,11 @@ class ExecutorPollerThread():
         self.results_ws_uri = results_ws_uri
         self._function_future_map = _function_future_map
         self.task_group_id = task_group_id
-
-        self.start()
+        # self.start()
+        self.dead_event = threading.Event()
+        self.dead_event.set()
+        # logger.warning("Creating lock : {}:{}".format(self.dead_event,
+        # self.dead_event.is_set()))
 
     def start(self):
         """ Start the result polling thread
@@ -142,14 +147,24 @@ class ExecutorPollerThread():
         # Currently we need to put the batch id's we launch into this queue
         # to tell the web_socket_poller to listen on them. Later we'll associate
 
+        # logger.warning("[RESULT_POLLER] attempting a start")
+        if self.dead_event.is_set() is False:
+            # logger.warning("[RESULT_POLLER] already running")
+            return
+        # logger.warning("[RESULT_POLLER] Starting WebSocketPollingTask")
+        self.dead_event.clear()
+
         eventloop = asyncio.new_event_loop()
         self.eventloop = eventloop
-        self.ws_handler = WebSocketPollingTask(self.funcx_client, eventloop, self.task_group_id,
-                                               self.results_ws_uri, auto_start=False)
+        self.ws_handler = WebSocketPollingTask(self.funcx_client,
+                                               eventloop,
+                                               self.task_group_id,
+                                               self.results_ws_uri,
+                                               dead_event=self.dead_event,
+                                               auto_start=False)
         self.thread = threading.Thread(target=self.event_loop_thread,
                                        args=(eventloop, ))
         self.thread.start()
-
         logger.debug("Started web_socket_poller thread")
 
     def event_loop_thread(self, eventloop):
@@ -162,10 +177,11 @@ class ExecutorPollerThread():
         await self.ws_handler.handle_incoming(self._function_future_map, auto_close=True)
 
     def shutdown(self):
-        ws = self.ws_handler.ws
-        if ws:
-            ws_close_future = asyncio.run_coroutine_threadsafe(ws.close(), self.eventloop)
-            ws_close_future.result()
+        if self.dead_event.is_set():
+            ws = self.ws_handler.ws
+            if ws:
+                ws_close_future = asyncio.run_coroutine_threadsafe(ws.close(), self.eventloop)
+                ws_close_future.result()
 
 
 def double(x):
