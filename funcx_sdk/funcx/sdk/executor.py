@@ -19,6 +19,34 @@ from funcx.sdk.asynchronous.ws_polling_task import WebSocketPollingTask
 logger = logging.getLogger("asyncio")
 
 
+class AtomicCounter():
+
+    def __init__(self, init_value=0):
+        self._value = 0
+        self.lock = threading.Lock()
+        self.is_live = threading.Event()
+        self.is_live.clear()
+
+    def increment(self):
+        with self.lock:
+            if self._value == 0:
+                self.is_live.set()
+            self._value += 1
+
+    def decrement(self):
+        with self.lock:
+            self._value -= 1
+            if self._value == 0:
+                self.is_live.clear()
+
+    def value(self):
+        with self.lock:
+            return self._value
+
+    def __repr__(self):
+        return f"AtomicCounter value:{self._value}, {self.is_live.is_set()}"
+
+
 class FuncXExecutor(concurrent.futures.Executor):
     """ An executor
     """
@@ -47,12 +75,16 @@ class FuncXExecutor(concurrent.futures.Executor):
         self._tasks = {}
         self._function_registry = {}
         self._function_future_map = {}
+        self.task_counter = AtomicCounter()
+        logger.warning(f"YADU: {self.task_counter}")
         self.task_group_id = self.funcx_client.session_task_group_id  # we need to associate all batch launches with this id
 
         self.result_poller = ResultPoller(self.funcx_client,
                                           self._function_future_map,
                                           self.results_ws_uri,
-                                          self.task_group_id)
+                                          self.task_group_id,
+                                          self.task_counter)
+        self.result_poller.start()
         atexit.register(self.shutdown)
 
     def submit(self, function, *args, endpoint_id=None, container_uuid=None, **kwargs):
@@ -77,7 +109,8 @@ class FuncXExecutor(concurrent.futures.Executor):
         Future : concurrent.futures.Future
             A future object
         """
-
+        self.task_counter.increment()
+        logger.warning(f"YADU: {self.task_counter}")
         if function not in self._function_registry:
             # Please note that this is a partial implementation, not all function registration
             # options are fleshed out here.
@@ -105,7 +138,7 @@ class FuncXExecutor(concurrent.futures.Executor):
 
         res = self._function_future_map[task_uuid]
 
-        self.result_poller.start()
+        # self.result_poller.start()
         return res
 
     def shutdown(self):
@@ -118,7 +151,7 @@ class ResultPoller():
     """ Handles all result polling
     """
 
-    def __init__(self, funcx_client, _function_future_map, results_ws_uri, task_group_id):
+    def __init__(self, funcx_client, _function_future_map, results_ws_uri, task_group_id, task_counter):
         """
         Parameters
         ==========
@@ -137,6 +170,7 @@ class ResultPoller():
         # self.start()
         self.dead_event = threading.Event()
         self.dead_event.set()
+        self.task_counter = task_counter
         # logger.warning("Creating lock : {}:{}".format(self.dead_event,
         # self.dead_event.is_set()))
 
@@ -169,7 +203,9 @@ class ResultPoller():
 
     def event_loop_thread(self, eventloop):
         asyncio.set_event_loop(eventloop)
-        eventloop.run_until_complete(self.web_socket_poller())
+        while True:
+            self.task_counter.is_live.wait()
+            eventloop.run_until_complete(self.web_socket_poller())
 
     @asyncio.coroutine
     async def web_socket_poller(self):
