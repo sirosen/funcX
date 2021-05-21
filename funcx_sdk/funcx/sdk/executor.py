@@ -102,21 +102,16 @@ class FuncXExecutor(concurrent.futures.Executor):
         task_uuid = r[0]
         logger.debug(f'Waiting on results for task ID: {task_uuid}')
 
-        # LOCK HERE - when we start adding a future to the future map
-        self.lock.acquire()
-        logger.debug('ACQUIRE LOCK - EXECUTOR')
-
-        # There's a potential for a race-condition here where the result reaches
-        # the poller before the future is added to the future_map
-        self._function_future_map[task_uuid] = Future()
-
-        res = self._function_future_map[task_uuid]
-
-        self.result_poller.start()
-
-        # UNLOCK HERE - after the ws thread is started if it needs starting
-        logger.debug('RELEASE LOCK - EXECUTOR')
-        self.lock.release()
+        # we need to worry that the poller thread is closing here while we add
+        # a task to the future map, so we need to lock
+        with self.lock:
+            # There's a potential for a race-condition here where the result reaches
+            # the poller before the future is added to the future_map
+            self._function_future_map[task_uuid] = Future()
+            res = self._function_future_map[task_uuid]
+            # this poller start needs to be locked because we are checking for a dead
+            # event here that would be set by the closing of the poller thread
+            self.result_poller.start()
 
         return res
 

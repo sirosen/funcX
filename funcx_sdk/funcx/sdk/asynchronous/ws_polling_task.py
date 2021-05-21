@@ -91,6 +91,9 @@ class WebSocketPollingTask:
     async def handle_incoming(self, pending_futures, auto_close=False):
         while True:
             # logger.warning("[WS_POLLING_T] Waiting for data")
+
+            # TODO: figure out what to do if the WebSocket closes unexpectedly and
+            # we need to reopen the connection
             try:
                 raw_data = await self.ws.recv()
             # we should get this exception after ws.close is called
@@ -100,64 +103,50 @@ class WebSocketPollingTask:
                 logger.exception(e)
                 return
 
-            self.raw_data_queue.put_nowait(raw_data)
+            # TODO: consider adding some delay and collecting many raw_data messages
+            # before we handle them so that we don't have to do as much locking
+            # e.g. a short delay like 100ms - possibly configurable by the user
+
             # this needs to happen in an async task because there is blocking to
             # acquire the lock. This is safe because the lock will only allow one
             # async task to attempt to close the WebSocket, and only if no other
             # messages should be received on this WebSocket
-            self.loop.create_task(self.handle_message(pending_futures, auto_close))
+            self.loop.create_task(self.handle_message(raw_data, pending_futures, auto_close))
 
-    async def handle_message(self, pending_futures, auto_close):
-        # LOCK HERE - when we start checking the future map
-        if self.lock:
-            self.lock.acquire()
-            logger.debug('ACQUIRE LOCK - WS POLLING')
-        
-        raw_data_processed_count = 0
-        while True:
-            # if there is no raw data available, all that will happen is that the
-            # lock will simply be acquired then released again
+    async def handle_message(self, raw_data, pending_futures, auto_close):
+        data = json.loads(raw_data)
+        task_id = data['task_id']
+
+        # logger.warning(f"[WS_POLLING_T] Received task: {task_id}")
+        if task_id in pending_futures:
+
+            future = pending_futures[task_id]
+            del pending_futures[task_id]
+
             try:
-                raw_data = self.raw_data_queue.get_nowait()
-            except Exception:
-                break
-            
-            raw_data_processed_count += 1
+                if data['result']:
+                    future.set_result(self.funcx_client.fx_serializer.deserialize(data['result']))
+                elif data['exception']:
+                    r_exception = self.funcx_client.fx_serializer.deserialize(data['exception'])
+                    future.set_exception(dill.loads(r_exception.e_value))
+                else:
+                    future.set_exception(Exception(data['reason']))
+            except Exception as e:
+                print("Caught exception : ", e)
+        else:
+            print("[MISSING FUTURE]")
 
-            data = json.loads(raw_data)
-            task_id = data['task_id']
-
-            # logger.warning(f"[WS_POLLING_T] Received task: {task_id}")
-            if task_id in pending_futures:
-
-                future = pending_futures[task_id]
-                del pending_futures[task_id]
-
-                try:
-                    if data['result']:
-                        future.set_result(self.funcx_client.fx_serializer.deserialize(data['result']))
-                    elif data['exception']:
-                        r_exception = self.funcx_client.fx_serializer.deserialize(data['exception'])
-                        future.set_exception(dill.loads(r_exception.e_value))
-                    else:
-                        future.set_exception(Exception(data['reason']))
-                except Exception as e:
-                    print("Caught exception : ", e)
-
-                # logger.warning("WS_POLLING_TASK] pending futures: {len(pending_futures)}")
-                if auto_close and len(pending_futures) == 0:
+        if auto_close:
+            # we need to worry that the executor might add a future to the pending_futures map
+            # which is why we need to lock
+            with self.lock:
+                # we don't want this poller thread to try to close the WebSocket client twice
+                if not self.closed and len(pending_futures) == 0:
                     self.dead_event.set()
                     # logger.warning("[WS_POLLING_TASK] setting dead event")
                     await self.ws.close()
                     self.ws = None
                     self.closed = True
-            else:
-                print("[MISSING FUTURE]")
-
-        # UNLOCK HERE - after the WebSocket is closed if it needs closing
-        if self.lock:
-            logger.debug('RELEASE LOCK - WS POLLING')
-            self.lock.release()
 
     def put_task_group_id(self, task_group_id):
         # prevent the task_group_id from being sent to the WebSocket server
