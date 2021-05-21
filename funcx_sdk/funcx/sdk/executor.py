@@ -49,10 +49,12 @@ class FuncXExecutor(concurrent.futures.Executor):
         self._function_future_map = {}
         self.task_group_id = self.funcx_client.session_task_group_id  # we need to associate all batch launches with this id
 
+        self.lock = threading.Lock()
         self.result_poller = ResultPoller(self.funcx_client,
                                           self._function_future_map,
                                           self.results_ws_uri,
-                                          self.task_group_id)
+                                          self.task_group_id,
+                                          self.lock)
         atexit.register(self.shutdown)
 
     def submit(self, function, *args, endpoint_id=None, container_uuid=None, **kwargs):
@@ -99,6 +101,11 @@ class FuncXExecutor(concurrent.futures.Executor):
 
         task_uuid = r[0]
         logger.debug(f'Waiting on results for task ID: {task_uuid}')
+
+        # LOCK HERE - when we start adding a future to the future map
+        self.lock.acquire()
+        logger.debug('ACQUIRE LOCK - EXECUTOR')
+
         # There's a potential for a race-condition here where the result reaches
         # the poller before the future is added to the future_map
         self._function_future_map[task_uuid] = Future()
@@ -106,6 +113,11 @@ class FuncXExecutor(concurrent.futures.Executor):
         res = self._function_future_map[task_uuid]
 
         self.result_poller.start()
+
+        # UNLOCK HERE - after the ws thread is started if it needs starting
+        logger.debug('RELEASE LOCK - EXECUTOR')
+        self.lock.release()
+
         return res
 
     def shutdown(self):
@@ -118,7 +130,7 @@ class ResultPoller():
     """ Handles all result polling
     """
 
-    def __init__(self, funcx_client, _function_future_map, results_ws_uri, task_group_id):
+    def __init__(self, funcx_client, _function_future_map, results_ws_uri, task_group_id, lock):
         """
         Parameters
         ==========
@@ -134,6 +146,7 @@ class ResultPoller():
         self.results_ws_uri = results_ws_uri
         self._function_future_map = _function_future_map
         self.task_group_id = task_group_id
+        self.lock = lock
         # self.start()
         self.dead_event = threading.Event()
         self.dead_event.set()
@@ -161,6 +174,7 @@ class ResultPoller():
                                                self.task_group_id,
                                                self.results_ws_uri,
                                                dead_event=self.dead_event,
+                                               lock=self.lock,
                                                auto_start=False)
         self.thread = threading.Thread(target=self.event_loop_thread,
                                        args=(eventloop, ))
