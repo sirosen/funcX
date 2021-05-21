@@ -19,7 +19,7 @@ class WebSocketPollingTask:
                  loop: AbstractEventLoop,
                  init_task_group_id: str = None,
                  results_ws_uri: str = 'ws://localhost:6000',
-                 dead_event=None,
+                 task_counter = None,
                  auto_start: bool = True):
         """
         Parameters
@@ -54,7 +54,7 @@ class WebSocketPollingTask:
         self.running_task_group_ids.add(self.init_task_group_id)
         self.task_group_ids_queue = asyncio.Queue()
         self.pending_tasks = {}
-        self.dead_event = dead_event if dead_event else threading.Event()
+        self.task_counter = task_counter
 
         self.ws = None
         self.closed = False
@@ -93,6 +93,11 @@ class WebSocketPollingTask:
             if task_id in pending_futures:
                 future = pending_futures[task_id]
                 del pending_futures[task_id]
+
+                task_counter_value = len(pending_futures)
+                if self.task_counter:
+                    task_counter_value = self.task_counter.decrement()
+
                 try:
                     if data['result']:
                         future.set_result(self.funcx_client.fx_serializer.deserialize(data['result']))
@@ -105,9 +110,7 @@ class WebSocketPollingTask:
                     print("Caught exception : ", e)
 
                 # logger.warning("WS_POLLING_TASK] pending futures: {len(pending_futures)}")
-                if auto_close and len(pending_futures) == 0:
-                    self.dead_event.set()
-                    # logger.warning("[WS_POLLING_TASK] setting dead event")
+                if auto_close and task_counter_value == 0:
                     await self.ws.close()
                     self.ws = None
                     self.closed = True

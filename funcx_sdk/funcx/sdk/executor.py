@@ -38,6 +38,7 @@ class AtomicCounter():
             self._value -= 1
             if self._value == 0:
                 self.is_live.clear()
+            return self._value
 
     def value(self):
         with self.lock:
@@ -167,12 +168,7 @@ class ResultPoller():
         self.results_ws_uri = results_ws_uri
         self._function_future_map = _function_future_map
         self.task_group_id = task_group_id
-        # self.start()
-        self.dead_event = threading.Event()
-        self.dead_event.set()
         self.task_counter = task_counter
-        # logger.warning("Creating lock : {}:{}".format(self.dead_event,
-        # self.dead_event.is_set()))
 
     def start(self):
         """ Start the result polling thread
@@ -181,20 +177,13 @@ class ResultPoller():
         # Currently we need to put the batch id's we launch into this queue
         # to tell the web_socket_poller to listen on them. Later we'll associate
 
-        # logger.warning("[RESULT_POLLER] attempting a start")
-        if self.dead_event.is_set() is False:
-            # logger.warning("[RESULT_POLLER] already running")
-            return
-        # logger.warning("[RESULT_POLLER] Starting WebSocketPollingTask")
-        self.dead_event.clear()
-
         eventloop = asyncio.new_event_loop()
         self.eventloop = eventloop
         self.ws_handler = WebSocketPollingTask(self.funcx_client,
                                                eventloop,
                                                self.task_group_id,
                                                self.results_ws_uri,
-                                               dead_event=self.dead_event,
+                                               task_counter=self.task_counter,
                                                auto_start=False)
         self.thread = threading.Thread(target=self.event_loop_thread,
                                        args=(eventloop, ))
@@ -204,6 +193,7 @@ class ResultPoller():
     def event_loop_thread(self, eventloop):
         asyncio.set_event_loop(eventloop)
         while True:
+            # this will not start a new poller until the previous poller is finished
             self.task_counter.is_live.wait()
             eventloop.run_until_complete(self.web_socket_poller())
 
@@ -213,11 +203,10 @@ class ResultPoller():
         await self.ws_handler.handle_incoming(self._function_future_map, auto_close=True)
 
     def shutdown(self):
-        if self.dead_event.is_set():
-            ws = self.ws_handler.ws
-            if ws:
-                ws_close_future = asyncio.run_coroutine_threadsafe(ws.close(), self.eventloop)
-                ws_close_future.result()
+        ws = self.ws_handler.ws
+        if ws:
+            ws_close_future = asyncio.run_coroutine_threadsafe(ws.close(), self.eventloop)
+            ws_close_future.result()
 
 
 def double(x):
