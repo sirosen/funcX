@@ -19,6 +19,36 @@ from funcx.sdk.asynchronous.ws_polling_task import WebSocketPollingTask
 logger = logging.getLogger(__name__)
 
 
+class FuncXExecutorFuture(Future):
+    def __init__(self, function_future_map):
+        super().__init__()
+
+        self._function_future_map = function_future_map
+    
+    def result(self, timeout=None):
+        self._open_poller_thread()
+
+        # We will expect the user to attempt a future.result() call to all the futures
+        # before we close the poller thread
+        try:
+            res = super().result(timeout)
+        except Exception:
+            self._close_poller_thread()
+            raise
+
+        self._close_poller_thread()
+        return res
+
+    def _open_poller_thread(self):
+        # open the poller thread if it was closed but this result is still pending
+        return
+
+    def _close_poller_thread(self):
+        # close the poller thread if all futures in the future map are either done
+        # or the user has already attempted to call future.result() on them
+        return
+
+
 class FuncXExecutor(concurrent.futures.Executor):
     """ An executor
     """
@@ -195,16 +225,17 @@ if __name__ == '__main__':
 
     print("In main")
     endpoint_id = args.endpoint_id
-    future = fx.submit(double, 5, endpoint_id=endpoint_id)
-    print("Got future back : ", future)
+    for i in range(10):
+        future = fx.submit(double, 5, endpoint_id=endpoint_id)
+        print("Got future back : ", future)
 
-    for i in range(5):
-        time.sleep(0.2)
-        # Non-blocking check whether future is done
-        print("Is the future done? :", future.done())
+    # for i in range(5):
+    #     time.sleep(0.2)
+    #     # Non-blocking check whether future is done
+    #     print("Is the future done? :", future.done())
 
-    print("Blocking for result")
-    x = future.result()     # <--- This is a blocking call
-    print("Result : ", x)
+    # print("Blocking for result")
+    # x = future.result()     # <--- This is a blocking call
+    # print("Result : ", x)
 
     # fx.shutdown()
