@@ -4,7 +4,7 @@ import logging
 from asyncio import AbstractEventLoop, QueueEmpty
 import dill
 import websockets
-from websockets.exceptions import InvalidHandshake
+from websockets.exceptions import InvalidHandshake, ConnectionClosedOK
 
 from funcx.sdk.asynchronous.funcx_task import FuncXTask
 
@@ -81,14 +81,20 @@ class WebSocketPollingTask:
             task_group_id = await queue.get()
             await self.ws.send(task_group_id)
 
-    async def handle_incoming(self, pending_futures, auto_close=False):
+    async def handle_incoming(self, pending_futures):
         while True:
-            raw_data = await self.ws.recv()
+            try:
+                raw_data = await self.ws.recv()
+            except ConnectionClosedOK:
+                return
+            except Exception:
+                raise
+
             data = json.loads(raw_data)
             task_id = data['task_id']
             if task_id in pending_futures:
                 future = pending_futures[task_id]
-                del pending_futures[task_id]
+                # del pending_futures[task_id]
                 try:
                     if data['result']:
                         future.set_result(self.funcx_client.fx_serializer.deserialize(data['result']))
@@ -100,11 +106,11 @@ class WebSocketPollingTask:
                 except Exception as e:
                     print("Caught exception : ", e)
 
-                if auto_close and len(pending_futures) == 0:
-                    await self.ws.close()
-                    self.ws = None
-                    self.closed = True
-                    return
+                # if auto_close and len(pending_futures) == 0:
+                #     await self.ws.close()
+                #     self.ws = None
+                #     self.closed = True
+                #     return
             else:
                 print("[MISSING FUTURE]")
 

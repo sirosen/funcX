@@ -20,12 +20,15 @@ logger = logging.getLogger(__name__)
 
 
 class FuncXExecutorFuture(Future):
-    def __init__(self, function_future_map):
+    def __init__(self, function_future_map, poller_thread):
         super().__init__()
 
         self._function_future_map = function_future_map
+        self._poller_thread = poller_thread
+        self._result_checked = False
     
     def result(self, timeout=None):
+        self._result_checked = True
         self._open_poller_thread()
 
         # We will expect the user to attempt a future.result() call to all the futures
@@ -41,12 +44,19 @@ class FuncXExecutorFuture(Future):
 
     def _open_poller_thread(self):
         # open the poller thread if it was closed but this result is still pending
-        return
+        if not super().done():
+            self._poller_thread.start()
 
     def _close_poller_thread(self):
         # close the poller thread if all futures in the future map are either done
         # or the user has already attempted to call future.result() on them
-        return
+        for task_uuid in self._function_future_map:
+            fut = self._function_future_map[task_uuid]
+            done_or_result_checked = fut.done() or fut._result_checked
+            if not done_or_result_checked:
+                return
+
+        self._poller_thread.shutdown()
 
 
 class FuncXExecutor(concurrent.futures.Executor):
@@ -79,7 +89,7 @@ class FuncXExecutor(concurrent.futures.Executor):
         self._function_future_map = {}
         self.task_group_id = self.funcx_client.session_task_group_id  # we need to associate all batch launches with this id
 
-        self.poller_thread = None
+        self.poller_thread = ExecutorPollerThread(self.funcx_client, self._function_future_map, self.results_ws_uri, self.task_group_id)
         atexit.register(self.shutdown)
 
     def submit(self, function, *args, endpoint_id=None, container_uuid=None, **kwargs):
@@ -128,12 +138,11 @@ class FuncXExecutor(concurrent.futures.Executor):
         logger.debug(f'Waiting on results for task ID: {task_uuid}')
         # There's a potential for a race-condition here where the result reaches
         # the poller before the future is added to the future_map
-        self._function_future_map[task_uuid] = Future()
+        self._function_future_map[task_uuid] = FuncXExecutorFuture(self._function_future_map, self.poller_thread)
 
         res = self._function_future_map[task_uuid]
 
-        if not self.poller_thread or self.poller_thread.ws_handler.closed:
-            self.poller_thread = ExecutorPollerThread(self.funcx_client, self._function_future_map, self.results_ws_uri, self.task_group_id)
+        self.poller_thread.start()
         return res
 
     def shutdown(self):
@@ -163,14 +172,21 @@ class ExecutorPollerThread():
         self._function_future_map = _function_future_map
         self.task_group_id = task_group_id
 
-        self.start()
+        self.eventloop = None
+        self.ws_handler = None
+        self.ws_initialized = threading.Event()
 
     def start(self):
         """ Start the result polling thread
         """
 
+        if self.ws_handler:
+            return
+
         # Currently we need to put the batch id's we launch into this queue
         # to tell the web_socket_poller to listen on them. Later we'll associate
+
+        self.ws_initialized.clear()
 
         eventloop = asyncio.new_event_loop()
         self.eventloop = eventloop
@@ -186,16 +202,28 @@ class ExecutorPollerThread():
         asyncio.set_event_loop(eventloop)
         eventloop.run_until_complete(self.web_socket_poller())
 
-    @asyncio.coroutine
     async def web_socket_poller(self):
-        await self.ws_handler.init_ws(start_message_handlers=False)
-        await self.ws_handler.handle_incoming(self._function_future_map, auto_close=True)
+        try:
+            await self.ws_handler.init_ws(start_message_handlers=False)
+            self.ws_initialized.set()
+            await self.ws_handler.handle_incoming(self._function_future_map)
+        except Exception:
+            # TODO: handle when ws initialization fails, possibly by setting an exception
+            # on all of the outstanding futures in the future map
+            raise
 
     def shutdown(self):
+        if not self.ws_handler:
+            return
+
+        self.ws_initialized.wait()
+
         ws = self.ws_handler.ws
         if ws:
             ws_close_future = asyncio.run_coroutine_threadsafe(ws.close(), self.eventloop)
             ws_close_future.result()
+        
+        self.ws_handler = None
 
 
 def double(x):
