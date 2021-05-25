@@ -3,7 +3,7 @@ import threading
 import os
 import uuid
 import sys
-from concurrent.futures import Future
+from concurrent.futures import Future, TimeoutError
 import concurrent
 import logging
 import asyncio
@@ -19,44 +19,100 @@ from funcx.sdk.asynchronous.ws_polling_task import WebSocketPollingTask
 logger = logging.getLogger(__name__)
 
 
+class AtomicCounter():
+
+    def __init__(self):
+        self._value = 0
+        self.lock = threading.Lock()
+        # usage of these events is simple: you set is_live when a thread like the WebSocket
+        # poller thread is guaranteed to be alive, and you set is_dead when the thread
+        # is guaranteed to be dead
+        # The essential element is that is_live MUST be set after every 0-to-1 increment,
+        # and is_dead MUST be set after every 1-to-0 decrement
+        self.is_live = threading.Event()
+        self.is_live.clear()
+        self.is_dead = threading.Event()
+        self.is_dead.set()
+
+    def increment(self):
+        with self.lock:
+            if self._value == 0:
+                # this will only get held up if the thread just started the process of closing
+                # (we are expecting this event to come because either the is_dead event is
+                # set from initialization above or is_dead will be set due to a recent decrement)
+                # we would like to avoid having many threads open so that:
+                # 1. we do not accidentally lose a thread and have hanging threads
+                # 2. the is_live and is_dead events have a clear meaning that only refer to 1 thread at a time
+
+                # Technically, multiple threads could be running at once without issues. However,
+                # this optimization to reduce locking has the drawbacks listed above.
+                self.is_dead.wait()
+                self.is_dead.clear()
+            self._value += 1
+            return self._value
+
+    def decrement(self):
+        with self.lock:
+            self._value -= 1
+            if self._value == 0:
+                # this will only get held up if the thread just started the process of opening
+                # we need to ensure that it has opened properly before we can close it properly
+                self.is_live.wait()
+                self.is_live.clear()
+            return self._value
+
+    def value(self):
+        with self.lock:
+            return self._value
+
+    def __repr__(self):
+        return f"AtomicCounter value:{self._value}, {self.is_live.is_set()}, {self.is_dead.is_set()}"        
+
+
 class FuncXExecutorFuture(Future):
-    def __init__(self, function_future_map, poller_thread):
+    def __init__(self, function_future_map, poller_thread, task_counter):
         super().__init__()
 
         self._function_future_map = function_future_map
         self._poller_thread = poller_thread
+        self._task_counter = task_counter
         self._result_checked = False
     
     def result(self, timeout=None):
+        if self._result_checked:
+            if super().done():
+                return super().result(timeout)
+            else:
+                v = self._task_counter.increment()
+                if v == 1:
+                    self._poller_thread.start()
+
         self._result_checked = True
-        self._open_poller_thread()
 
         # We will expect the user to attempt a future.result() call to all the futures
         # before we close the poller thread
         try:
             res = super().result(timeout)
+        except TimeoutError:
+            self._close_poller_thread()
+            raise
         except Exception:
+            # we should still close the poller thread in the case of any exception
+            # because it means that an exception was set to the future and it is complete
             self._close_poller_thread()
             raise
 
         self._close_poller_thread()
         return res
 
-    def _open_poller_thread(self):
-        # open the poller thread if it was closed but this result is still pending
-        if not super().done():
-            self._poller_thread.start()
+    # TODO: we will need to override the future.exception() method as well
 
     def _close_poller_thread(self):
-        # close the poller thread if all futures in the future map are either done
-        # or the user has already attempted to call future.result() on them
-        for task_uuid in self._function_future_map:
-            fut = self._function_future_map[task_uuid]
-            done_or_result_checked = fut.done() or fut._result_checked
-            if not done_or_result_checked:
-                return
-
-        self._poller_thread.shutdown()
+        # close the poller thread if the user has attempted to call future.done() on
+        # all futures
+        v = self._task_counter.decrement()
+        if v == 0:
+            self._poller_thread.shutdown()
 
 
 class FuncXExecutor(concurrent.futures.Executor):
@@ -87,9 +143,10 @@ class FuncXExecutor(concurrent.futures.Executor):
         self._tasks = {}
         self._function_registry = {}
         self._function_future_map = {}
+        self.task_counter = AtomicCounter()
         self.task_group_id = self.funcx_client.session_task_group_id  # we need to associate all batch launches with this id
 
-        self.poller_thread = ExecutorPollerThread(self.funcx_client, self._function_future_map, self.results_ws_uri, self.task_group_id)
+        self.poller_thread = ExecutorPollerThread(self.funcx_client, self._function_future_map, self.results_ws_uri, self.task_group_id, self.task_counter)
         atexit.register(self.shutdown)
 
     def submit(self, function, *args, endpoint_id=None, container_uuid=None, **kwargs):
@@ -115,6 +172,10 @@ class FuncXExecutor(concurrent.futures.Executor):
             A future object
         """
 
+        v = self.task_counter.increment()
+        if v == 1:
+            self.poller_thread.start()
+
         if function not in self._function_registry:
             # Please note that this is a partial implementation, not all function registration
             # options are fleshed out here.
@@ -138,11 +199,9 @@ class FuncXExecutor(concurrent.futures.Executor):
         logger.debug(f'Waiting on results for task ID: {task_uuid}')
         # There's a potential for a race-condition here where the result reaches
         # the poller before the future is added to the future_map
-        self._function_future_map[task_uuid] = FuncXExecutorFuture(self._function_future_map, self.poller_thread)
+        self._function_future_map[task_uuid] = FuncXExecutorFuture(self._function_future_map, self.poller_thread, self.task_counter)
 
         res = self._function_future_map[task_uuid]
-
-        self.poller_thread.start()
         return res
 
     def shutdown(self):
@@ -155,7 +214,7 @@ class ExecutorPollerThread():
     """ An executor
     """
 
-    def __init__(self, funcx_client, _function_future_map, results_ws_uri, task_group_id):
+    def __init__(self, funcx_client, _function_future_map, results_ws_uri, task_group_id, task_counter):
         """
         Parameters
         ==========
@@ -171,23 +230,14 @@ class ExecutorPollerThread():
         self.results_ws_uri = results_ws_uri
         self._function_future_map = _function_future_map
         self.task_group_id = task_group_id
+        self.task_counter = task_counter
 
         self.eventloop = None
         self.ws_handler = None
-        self.ws_initialized = threading.Event()
 
     def start(self):
         """ Start the result polling thread
         """
-
-        if self.ws_handler:
-            return
-
-        # Currently we need to put the batch id's we launch into this queue
-        # to tell the web_socket_poller to listen on them. Later we'll associate
-
-        self.ws_initialized.clear()
-
         eventloop = asyncio.new_event_loop()
         self.eventloop = eventloop
         self.ws_handler = WebSocketPollingTask(self.funcx_client, eventloop, self.task_group_id,
@@ -205,7 +255,7 @@ class ExecutorPollerThread():
     async def web_socket_poller(self):
         try:
             await self.ws_handler.init_ws(start_message_handlers=False)
-            self.ws_initialized.set()
+            self.task_counter.is_live.set()
             await self.ws_handler.handle_incoming(self._function_future_map)
         except Exception:
             # TODO: handle when ws initialization fails, possibly by setting an exception
@@ -213,10 +263,11 @@ class ExecutorPollerThread():
             raise
 
     def shutdown(self):
+        # under normal, locked shutdown conditions, ws_handler and ws_handler.ws are
+        # guaranteed to be set because shutdown can only be called after task_counter.is_live
+        # is set.
         if not self.ws_handler:
             return
-
-        self.ws_initialized.wait()
 
         ws = self.ws_handler.ws
         if ws:
@@ -224,6 +275,8 @@ class ExecutorPollerThread():
             ws_close_future.result()
         
         self.ws_handler = None
+
+        self.task_counter.is_dead.set()
 
 
 def double(x):
