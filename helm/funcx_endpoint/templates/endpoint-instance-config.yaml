@@ -34,6 +34,7 @@ data:
                     image="{{ .Values.workerImage }}",
                     worker_init='{{ .Values.workerInit }}',
                     namespace='{{ .Values.workerNamespace }}',
+                    secret='{{ .Values.dockerSecret }}',
                     incluster_config=True
                 ),
             )
