@@ -1,0 +1,23 @@
+detachEndpoint: true
+endpointUUID: 36086313-8aba-4d0e-8132-e77775b9781d
+funcXServiceAddress: https://api2.funcx.org
+image:
+  pullPolicy: Always
+  repository: funcx/kube-endpoint
+  tag: disable-python-version-check-new-release
+initBlocks: 0
+initCPU: 1
+initMem: 2000Mi
+maxBlocks: 200
+maxCPU: 1
+maxMem: 16000Mi
+maxWorkersPerPod: 1
+minBlocks: 0
+nameOverride: funcx-endpoint
+rbacEnabled: true
+replicaCount: 1
+workerImage: python:3.7-buster
+workerInit: source activate nonconformity;pip install --force-reinstall git+https://github.com/funcx-faas/funcX.git@disable-python-version-check-new-release#subdirectory=funcx_endpoint
+workerNamespace: parsl
+workingDir: /tmp/worker_logs
+dockerSecret: eric-github-secret
