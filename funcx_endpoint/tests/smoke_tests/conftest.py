@@ -2,7 +2,8 @@ import json
 import os
 
 import pytest
-from globus_sdk import ConfidentialAppAuthClient, AccessTokenAuthorizer
+from globus_sdk import AccessTokenAuthorizer, ConfidentialAppAuthClient
+
 from funcx import FuncXClient
 from funcx.sdk.executor import FuncXExecutor
 
@@ -80,13 +81,13 @@ def pytest_addoption(parser):
         "--api-client-id",
         metavar="api-client-id",
         default=None,
-        help="The API Client ID. Used for github actions testing"
+        help="The API Client ID. Used for github actions testing",
     )
     parser.addoption(
         "--api-client-secret",
         metavar="api-client-secret",
         default=None,
-        help="The API Client Secret. Used for github actions testing"
+        help="The API Client Secret. Used for github actions testing",
     )
 
 
@@ -124,14 +125,22 @@ def funcx_test_config(pytestconfig, funcx_test_config_name):
 
     if api_client_id and api_client_secret:
         client = ConfidentialAppAuthClient(api_client_id, api_client_secret)
-        scopes = ["https://auth.globus.org/scopes/facd7ccc-c5f4-42aa-916b-a0e270e2c2a9/all",
-                  "urn:globus:auth:scope:search.api.globus.org:all",
-                  "openid"]
+        scopes = [
+            "https://auth.globus.org/scopes/facd7ccc-c5f4-42aa-916b-a0e270e2c2a9/all",
+            "urn:globus:auth:scope:search.api.globus.org:all",
+            "openid",
+        ]
 
-        token_response = client.oauth2_client_credentials_tokens(requested_scopes=scopes)
-        fx_token = token_response.by_resource_server['funcx_service']['access_token']
-        search_token = token_response.by_resource_server['search.api.globus.org']['access_token']
-        openid_token = token_response.by_resource_server['auth.globus.org']['access_token']
+        token_response = client.oauth2_client_credentials_tokens(
+            requested_scopes=scopes
+        )
+        fx_token = token_response.by_resource_server["funcx_service"]["access_token"]
+        search_token = token_response.by_resource_server["search.api.globus.org"][
+            "access_token"
+        ]
+        openid_token = token_response.by_resource_server["auth.globus.org"][
+            "access_token"
+        ]
 
         fx_auth = AccessTokenAuthorizer(fx_token)
         search_auth = AccessTokenAuthorizer(search_token)
