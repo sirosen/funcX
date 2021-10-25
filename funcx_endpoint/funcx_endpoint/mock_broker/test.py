@@ -1,8 +1,11 @@
-from funcx_endpoint.executors import HighThroughputExecutor as HTEX
-from parsl.providers import LocalProvider
-from parsl.channels import LocalChannel
-import parsl
 import time
+
+import parsl
+from parsl.channels import LocalChannel
+from parsl.providers import LocalProvider
+
+from funcx_endpoint.executors import HighThroughputExecutor as HTEX
+
 parsl.set_stream_logger()
 
 
@@ -16,11 +19,11 @@ def fail(x):
 
 def test_1():
 
-    x = HTEX(label='htex',
-             provider=LocalProvider(
-                 channel=LocalChannel),
-             address="127.0.0.1",
-             )
+    x = HTEX(
+        label="htex",
+        provider=LocalProvider(channel=LocalChannel),
+        address="127.0.0.1",
+    )
     task_p, result_p, command_p = x.start()
     print(task_p, result_p, command_p)
     print("Executor initialized : ", x)
@@ -39,7 +42,7 @@ def test_1():
         if stop == "y":
             break
 
-    print("F1: {}, f2: {}".format(f1.done(), f2.done()))
+    print(f"F1: {f1.done()}, f2: {f2.done()}")
     x.shutdown()
 
 
@@ -47,17 +50,17 @@ def test_2():
 
     from funcx_endpoint.executors.high_throughput.executor import executor_starter
 
-    htex = HTEX(label='htex',
-                provider=LocalProvider(
-                    channel=LocalChannel),
-                address="127.0.0.1")
+    htex = HTEX(
+        label="htex", provider=LocalProvider(channel=LocalChannel), address="127.0.0.1"
+    )
     print("Foo")
     executor_starter(htex, "forwarder", "ep_01")
     print("Here")
 
 
 def test_3():
-    from funcx_endpoint.mock_broker.forwarder import Forwarder, spawn_forwarder
+    from funcx_endpoint.mock_broker.forwarder import spawn_forwarder
+
     fw = spawn_forwarder("127.0.0.1", endpoint_id="0001")
     print("Spawned forwarder")
     time.sleep(120)
@@ -65,5 +68,5 @@ def test_3():
     fw.terminate()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test_3()
