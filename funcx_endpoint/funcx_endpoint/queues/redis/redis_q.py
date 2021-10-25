@@ -1,11 +1,12 @@
-import redis
 import json
 
-from funcx_endpoint.queues.base import NotConnected, FuncxQueue
+import redis
+
+from funcx_endpoint.queues.base import FuncxQueue, NotConnected
 
 
 class RedisQueue(FuncxQueue):
-    """ A basic redis queue
+    """A basic redis queue
 
     The queue only connects when the `connect` method is called to avoid
     issues with passing an object across processes.
@@ -22,27 +23,30 @@ class RedisQueue(FuncxQueue):
     """
 
     def __init__(self, prefix, hostname, port=6379):
-        """ Initialize
-        """
+        """Initialize"""
         self.hostname = hostname
         self.port = port
         self.redis_client = None
         self.prefix = prefix
 
     def connect(self):
-        """ Connects to the Redis server
-        """
+        """Connects to the Redis server"""
         try:
             if not self.redis_client:
-                self.redis_client = redis.StrictRedis(host=self.hostname, port=self.port, decode_responses=True)
+                self.redis_client = redis.StrictRedis(
+                    host=self.hostname, port=self.port, decode_responses=True
+                )
         except redis.exceptions.ConnectionError:
-            print("ConnectionError while trying to connect to Redis@{}:{}".format(self.hostname,
-                                                                                  self.port))
+            print(
+                "ConnectionError while trying to connect to Redis@{}:{}".format(
+                    self.hostname, self.port
+                )
+            )
 
             raise
 
     def get(self, timeout=1):
-        """ Get an item from the redis queue
+        """Get an item from the redis queue
 
         Parameters
         ----------
@@ -50,19 +54,25 @@ class RedisQueue(FuncxQueue):
            Timeout for the blocking get in seconds
         """
         try:
-            task_list, task_id = self.redis_client.blpop(f'{self.prefix}_list', timeout=timeout)
-            jtask_info = self.redis_client.get(f'{self.prefix}:{task_id}')
+            task_list, task_id = self.redis_client.blpop(
+                f"{self.prefix}_list", timeout=timeout
+            )
+            jtask_info = self.redis_client.get(f"{self.prefix}:{task_id}")
             task_info = json.loads(jtask_info)
         except AttributeError:
             raise NotConnected(self)
         except redis.exceptions.ConnectionError:
-            print(f"ConnectionError while trying to connect to Redis@{self.hostname}:{self.port}")
+            print(
+                "ConnectionError while trying to connect to Redis@%s:%s",
+                self.hostname,
+                self.port,
+            )
             raise
 
         return task_id, task_info
 
     def put(self, key, payload):
-        """ Put's the key:payload into a dict and pushes the key onto a queue
+        """Put's the key:payload into a dict and pushes the key onto a queue
         Parameters
         ----------
         key : str
@@ -72,13 +82,16 @@ class RedisQueue(FuncxQueue):
             Dict of task information to be stored
         """
         try:
-            self.redis_client.set(f'{self.prefix}:{key}', json.dumps(payload))
-            self.redis_client.rpush(f'{self.prefix}_list', key)
+            self.redis_client.set(f"{self.prefix}:{key}", json.dumps(payload))
+            self.redis_client.rpush(f"{self.prefix}_list", key)
         except AttributeError:
             raise NotConnected(self)
         except redis.exceptions.ConnectionError:
-            print("ConnectionError while trying to connect to Redis@{}:{}".format(self.hostname,
-                                                                                  self.port))
+            print(
+                "ConnectionError while trying to connect to Redis@{}:{}".format(
+                    self.hostname, self.port
+                )
+            )
             raise
 
     @property
@@ -87,12 +100,12 @@ class RedisQueue(FuncxQueue):
 
 
 def test():
-    rq = RedisQueue('task', '127.0.0.1')
+    rq = RedisQueue("task", "127.0.0.1")
     rq.connect()
-    rq.put("01", {'a': 1, 'b': 2})
+    rq.put("01", {"a": 1, "b": 2})
     res = rq.get(timeout=1)
     print("Result : ", res)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test()
