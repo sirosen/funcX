@@ -1,11 +1,10 @@
 import logging
-from functools import partial
-import uuid
 import os
 import queue
-from multiprocessing import Queue
+import uuid
+from functools import partial
+from multiprocessing import Process, Queue
 
-from multiprocessing import Process
 from funcx import set_file_logger
 
 
@@ -18,7 +17,7 @@ def failer(x):
 
 
 class Forwarder(Process):
-    """ Forwards tasks/results between the executor and the queues
+    """Forwards tasks/results between the executor and the queues
 
         Tasks_Q  Results_Q
            |     ^
@@ -27,19 +26,28 @@ class Forwarder(Process):
           Executors
 
     Todo : We need to clarify what constitutes a task that comes down
-    the task pipe. Does it already have the code fragment? Or does that need to be sorted
-    out from some DB ?
+    the task pipe. Does it already have the code fragment? Or does that need to be
+    sorted out from some DB ?
     """
 
-    def __init__(self, task_q, result_q, executor, endpoint_id,
-                 logdir="forwarder", logging_level=logging.INFO):
+    def __init__(
+        self,
+        task_q,
+        result_q,
+        executor,
+        endpoint_id,
+        logdir="forwarder",
+        logging_level=logging.INFO,
+    ):
         """
         Params:
              task_q : A queue object
-                Any queue object that has get primitives. This must be a thread-safe queue.
+                Any queue object that has get primitives. This must be a thread-safe
+                queue.
 
              result_q : A queue object
-                Any queue object that has put primitives. This must be a thread-safe queue.
+                Any queue object that has put primitives. This must be a thread-safe
+                queue.
 
              executor: Executor object
                 Executor to which tasks are to be forwarded
@@ -51,18 +59,20 @@ class Forwarder(Process):
                 Path to logdir
 
              logging_level : int
-                Logging level as defined in the logging module. Default: logging.INFO (20)
-
+                Logging level as defined in the logging module.
+                Default: logging.INFO (20)
         """
         super().__init__()
         self.logdir = logdir
         os.makedirs(self.logdir, exist_ok=True)
 
         global logger
-        logger = set_file_logger(os.path.join(self.logdir, "forwarder.{}.log".format(endpoint_id)),
-                                 level=logging_level)
+        logger = set_file_logger(
+            os.path.join(self.logdir, f"forwarder.{endpoint_id}.log"),
+            level=logging_level,
+        )
 
-        logger.info("Initializing forwarder for endpoint:{}".format(endpoint_id))
+        logger.info(f"Initializing forwarder for endpoint:{endpoint_id}")
         self.task_q = task_q
         self.result_q = result_q
         self.executor = executor
@@ -71,7 +81,7 @@ class Forwarder(Process):
         self.client_ports = None
 
     def handle_app_update(self, task_id, future):
-        """ Triggered when the executor sees a task complete.
+        """Triggered when the executor sees a task complete.
 
         This can be further optimized at the executor level, where we trigger this
         or a similar function when we see a results item inbound from the interchange.
@@ -81,17 +91,16 @@ class Forwarder(Process):
             res = future.result()
             self.result_q.put(task_id, res)
         except Exception:
-            logger.debug("Task:{} failed".format(task_id))
+            logger.debug(f"Task:{task_id} failed")
             # Todo : Since we caught an exception, we should wrap it here, and send it
             # back onto the results queue.
         else:
-            logger.debug("Task:{} succeeded".format(task_id))
+            logger.debug(f"Task:{task_id} succeeded")
 
     def run(self):
-        """ Process entry point.
-        """
+        """Process entry point."""
         logger.info("[TASKS] Loop starting")
-        logger.info("[TASKS] Executor: {}".format(self.executor))
+        logger.info(f"[TASKS] Executor: {self.executor}")
 
         try:
             self.task_q.connect()
@@ -102,12 +111,12 @@ class Forwarder(Process):
         self.executor.start()
         conn_info = self.executor.connection_info
         self.internal_q.put(conn_info)
-        logger.info("[TASKS] Endpoint connection info: {}".format(conn_info))
+        logger.info(f"[TASKS] Endpoint connection info: {conn_info}")
 
         while True:
             try:
                 task = self.task_q.get(timeout=10)
-                logger.debug("[TASKS] Not doing {}".format(task))
+                logger.debug(f"[TASKS] Not doing {task}")
             except queue.Empty:
                 # This exception catching isn't very general,
                 # Essentially any timeout exception should be caught and ignored
@@ -126,8 +135,7 @@ class Forwarder(Process):
 
     @property
     def connection_info(self):
-        """Get the client ports to which the interchange must connect to
-        """
+        """Get the client ports to which the interchange must connect to"""
 
         if not self.client_ports:
             self.client_ports = self.internal_q.get()
@@ -135,13 +143,15 @@ class Forwarder(Process):
         return self.client_ports
 
 
-def spawn_forwarder(address,
-                    executor=None,
-                    task_q=None,
-                    result_q=None,
-                    endpoint_id=uuid.uuid4(),
-                    logging_level=logging.INFO):
-    """ Spawns a forwarder and returns the forwarder process for tracking.
+def spawn_forwarder(
+    address,
+    executor=None,
+    task_q=None,
+    result_q=None,
+    endpoint_id=uuid.uuid4(),
+    logging_level=logging.INFO,
+):
+    """Spawns a forwarder and returns the forwarder process for tracking.
 
     Parameters
     ----------
@@ -164,23 +174,27 @@ def spawn_forwarder(address,
     Returns:
          A Forwarder object
     """
-    from funcx_endpoint.queues import RedisQueue
-    from funcx_endpoint.executors import HighThroughputExecutor as HTEX
-    from parsl.providers import LocalProvider
     from parsl.channels import LocalChannel
+    from parsl.providers import LocalProvider
 
-    task_q = RedisQueue('task', '127.0.0.1')
-    result_q = RedisQueue('result', '127.0.0.1')
+    from funcx_endpoint.executors import HighThroughputExecutor as HTEX
+    from funcx_endpoint.queues import RedisQueue
+
+    task_q = RedisQueue("task", "127.0.0.1")
+    result_q = RedisQueue("result", "127.0.0.1")
 
     if not executor:
-        executor = HTEX(label='htex',
-                        provider=LocalProvider(
-                            channel=LocalChannel),
-                        address=address)
+        executor = HTEX(
+            label="htex", provider=LocalProvider(channel=LocalChannel), address=address
+        )
 
-    fw = Forwarder(task_q, result_q, executor,
-                   "Endpoint_{}".format(endpoint_id),
-                   logging_level=logging_level)
+    fw = Forwarder(
+        task_q,
+        result_q,
+        executor,
+        f"Endpoint_{endpoint_id}",
+        logging_level=logging_level,
+    )
     fw.start()
     return fw
 
