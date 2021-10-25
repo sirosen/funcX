@@ -39,7 +39,7 @@ Architecture and Notes
 ----------------------
 
 The endpoint registers and receives the information
- 
+
 ```
                                        TaskQ ResultQ
                                           |    |
