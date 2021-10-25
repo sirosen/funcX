@@ -5,19 +5,19 @@ creates an appropriate forwarder to which the endpoint can connect up.
 """
 
 
-import bottle
-from bottle import post, run, request, route
 import argparse
 import json
 import uuid
-import sys
 
-from funcx_endpoint.mock_broker.forwarder import Forwarder, spawn_forwarder
+import bottle
+from bottle import post, request, route, run
+
+from funcx_endpoint.mock_broker.forwarder import spawn_forwarder
 
 
-@post('/register')
+@post("/register")
 def register():
-    """ Register an endpoint request
+    """Register an endpoint request
 
     1. Start an executor client object corresponding to the endpoint
     2. Pass connection info back as a json response.
@@ -36,7 +36,7 @@ def register():
     endpoint_id = str(uuid.uuid4())
     fw = spawn_forwarder(request.app.address, endpoint_id=endpoint_id)
     connection_info = fw.connection_info
-    ret_package = {'endpoint_id': endpoint_id}
+    ret_package = {"endpoint_id": endpoint_id}
     ret_package.update(connection_info)
     print("Ret_package : ", ret_package)
 
@@ -45,21 +45,26 @@ def register():
     return ret_package
 
 
-@route('/list_mappings')
+@route("/list_mappings")
 def list_mappings():
     return request.app.ep_mapping
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("-p", "--port", default=8088,
-                        help="Port at which the service will listen on")
-    parser.add_argument("-a", "--address", default='127.0.0.1',
-                        help="Address at which the service is running")
-    parser.add_argument("-c", "--config", default=None,
-                        help="Config file")
-    parser.add_argument("-d", "--debug", action='store_true',
-                        help="Enables debug logging")
+    parser.add_argument(
+        "-p", "--port", default=8088, help="Port at which the service will listen on"
+    )
+    parser.add_argument(
+        "-a",
+        "--address",
+        default="127.0.0.1",
+        help="Address at which the service is running",
+    )
+    parser.add_argument("-c", "--config", default=None, help="Config file")
+    parser.add_argument(
+        "-d", "--debug", action="store_true", help="Enables debug logging"
+    )
 
     args = parser.parse_args()
 
@@ -68,8 +73,8 @@ if __name__ == '__main__':
     app.ep_mapping = {}
 
     try:
-        run(host='localhost', app=app, port=int(args.port), debug=True)
+        run(host="localhost", app=app, port=int(args.port), debug=True)
     except Exception as e:
         # This doesn't do anything
-        print("Caught exception : {}".format(e))
+        print(f"Caught exception : {e}")
         exit(-1)
